@@ -1,60 +1,127 @@
-import fitz
+import fitz  # PyMuPDF
+import cv2
+import numpy as np
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from PIL import Image
 
-# Variables globales para los precios de fotocopia
-precio_bn = 100
-precio_color = 200
+# Variables globales para los precios de fotocopia según la tabla
+precios_publico = {
+    "simple": {
+        1: 100,
+        2: 80,
+        30: 60,
+        80: 40
+    },
+    "doble": {
+        1: 100,
+        30: 60,
+        80: 70
+    }
+}
 
-# Variable global para el precio actual de fotocopia
-precio_fotocopia = precio_bn
+precios_estudiante = {
+    "simple": {
+        4: 50,
+        20: 50,
+        80: 40
+    },
+    "doble": {
+        4: 80,
+        20: 80,
+        100: 70
+    }
+}
 
-def calcular_precios(ruta_pdf):
+def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color):
+    precios = precios_estudiante if usuario == "estudiante" else precios_publico
+
+    ajuste_color = 1.0 + (4.0 * porcentaje_color) if color else 1.0  # 1.0 para B/N, hasta 5.0 para 100% color
+
+    for limite, precio in sorted(precios[tipo].items(), reverse=True):
+        if cantidad >= limite:
+            return int(precio * ajuste_color)
+    return 0
+
+def obtener_porcentaje_color(pagina):
+    # Convertir la página a una imagen de PIL
+    pix = pagina.get_pixmap()
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+    # Convertir la imagen de PIL a un arreglo de NumPy
+    img_np = np.array(img)
+
+    # Convertir la imagen a espacio de color HSV
+    hsv = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
+
+    # Definir umbral para detectar colores (excluyendo blanco y negro)
+    sensitivity = 60
+    lower_color = np.array([0, 0, 0])
+    upper_color = np.array([179, 255, 255])
+
+    # Crear una máscara para los colores
+    mask = cv2.inRange(hsv, lower_color, upper_color)
+
+    # Calcular el porcentaje de área coloreada
+    color_percentage = np.sum(mask > sensitivity) / mask.size
+
+    return color_percentage
+
+def calcular_precios(ruta_pdfs, doble_faz=False, usuario="publico", color=False):
+    detalles_archivos = {}
     try:
-        doc = fitz.open(ruta_pdf)
-        num_paginas = len(doc)
-        total_copias = num_paginas * precio_fotocopia
-        return total_copias
+        total_paginas = 0
+        total_color = 0
+        for ruta_pdf in ruta_pdfs:
+            doc = fitz.open(ruta_pdf)
+            num_paginas = len(doc)
+            detalles_archivos[ruta_pdf] = num_paginas
+            total_paginas += num_paginas
+
+            for pagina in doc:
+                total_color += obtener_porcentaje_color(pagina)
+
+        porcentaje_color_promedio = total_color / total_paginas
+
+        if doble_faz:
+            total_paginas = (total_paginas + 1) // 2  # Redondear para arriba
+            total_paginas = total_paginas + (total_paginas % 2)  # Asegurar que sea par
+            tipo = "doble"
+        else:
+            tipo = "simple"
+
+        precio_fotocopia = obtener_precio(total_paginas, tipo, usuario, porcentaje_color_promedio, color)
+        total_copias = total_paginas * precio_fotocopia
+        return total_copias, detalles_archivos
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo abrir el archivo PDF: {e}")
-        return None
+        return None, None
 
 def menu_interactivo():
     def salir():
         root.destroy()
 
-    def seleccionar_archivo():
-        ruta_pdf = filedialog.askopenfilename(filetypes=[("Archivos PDF", "*.pdf")])
-        if ruta_pdf:
-            ruta_var.set(ruta_pdf)
+    def seleccionar_archivos():
+        rutas_pdfs = filedialog.askopenfilenames(filetypes=[("Archivos PDF", "*.pdf")])
+        if rutas_pdfs:
+            rutas_var.set(", ".join(rutas_pdfs))
 
     def calcular():
-        ruta_pdf = ruta_var.get()
-        if ruta_pdf:
-            total_copias = calcular_precios(ruta_pdf)
+        rutas_pdfs = rutas_var.get().split(", ")
+        if rutas_pdfs:
+            doble_faz = opcion_doble_faz.get() == 1
+            usuario = "estudiante" if opcion_usuario.get() == 1 else "publico"
+            color = opcion_color.get() == 1
+            total_copias, detalles_archivos = calcular_precios(rutas_pdfs, doble_faz, usuario, color)
             if total_copias is not None:
-                messagebox.showinfo("Resultado", f'El costo total de las fotocopias es: ${total_copias}')
+                detalle_mensaje = "\n".join([f'Archivo: {ruta}, Hojas: {hojas}' for ruta, hojas in detalles_archivos.items()])
+                messagebox.showinfo("Resultado", f'El costo total de las fotocopias es: ${total_copias}\n\nDetalles:\n{detalle_mensaje}')
         else:
-            messagebox.showwarning("Advertencia", "Por favor, selecciona un archivo PDF.")
-
-    def cambiar_precio():
-        global precio_bn, precio_color, precio_fotocopia
-        try:
-            nuevo_precio_bn = int(entry_precio_bn.get())
-            nuevo_precio_color = int(entry_precio_color.get())
-            precio_bn = nuevo_precio_bn
-            precio_color = nuevo_precio_color
-            if opcion_precio.get() == 1:
-                precio_fotocopia = precio_bn
-            elif opcion_precio.get() == 2:
-                precio_fotocopia = precio_color
-            messagebox.showinfo("Precio Actualizado", f'El precio de la fotocopia ha sido actualizado a: ${precio_fotocopia} por página.')
-        except ValueError:
-            messagebox.showerror("Error", "Por favor, introduce un valor numérico válido para los precios.")
+            messagebox.showwarning("Advertencia", "Por favor, selecciona al menos un archivo PDF.")
 
     root = tk.Tk()
     root.title("Calculadora de Archivos")
-    root.geometry("700x500")
+    root.geometry("700x600")
     root.config(background='#ACE3DF')
 
     style = ttk.Style()
@@ -71,41 +138,31 @@ def menu_interactivo():
     acciones_menu.add_command(label='Calcular Precio', command=calcular)
 
     # Widgets
-    ruta_var = tk.StringVar()
-    opcion_precio = tk.IntVar(value=1)
+    rutas_var = tk.StringVar()
+    opcion_doble_faz = tk.IntVar(value=0)
+    opcion_usuario = tk.IntVar(value=0)
+    opcion_color = tk.IntVar(value=0)
 
-    label_instruccion = tk.Label(root, text="Selecciona un archivo PDF y calcula el costo de las fotocopias.", background='#ACE3DF')
+    label_instruccion = tk.Label(root, text="Selecciona uno o más archivos PDF y calcula el costo de las fotocopias.", background='#ACE3DF')
     label_instruccion.pack(pady=20)
 
-    btn_seleccionar = ttk.Button(root, text="Seleccionar Archivo PDF", command=seleccionar_archivo)
+    btn_seleccionar = ttk.Button(root, text="Seleccionar Archivos PDF", command=seleccionar_archivos)
     btn_seleccionar.pack(pady=10)
 
-    label_ruta = tk.Label(root, textvariable=ruta_var, background='#ACE3DF')
-    label_ruta.pack(pady=10)
+    label_rutas = tk.Label(root, textvariable=rutas_var, background='#ACE3DF', wraplength=600)
+    label_rutas.pack(pady=10)
 
-    frame_precio = tk.Frame(root, background='#ACE3DF')
-    frame_precio.pack(pady=10)
+    frame_opciones = tk.Frame(root, background='#ACE3DF')
+    frame_opciones.pack(pady=10)
 
-    radio_bn = tk.Radiobutton(frame_precio, text="Blanco y Negro", variable=opcion_precio, value=1, background='#ACE3DF')
-    radio_bn.pack(side=tk.LEFT)
+    check_doble_faz = tk.Checkbutton(frame_opciones, text="Doble Faz", variable=opcion_doble_faz, background='#ACE3DF')
+    check_doble_faz.pack(side=tk.LEFT, padx=10)
 
-    radio_color = tk.Radiobutton(frame_precio, text="Color", variable=opcion_precio, value=2, background='#ACE3DF')
-    radio_color.pack(side=tk.LEFT)
+    check_usuario = tk.Checkbutton(frame_opciones, text="Estudiante", variable=opcion_usuario, background='#ACE3DF')
+    check_usuario.pack(side=tk.LEFT, padx=10)
 
-    label_precio_bn = tk.Label(root, text="Precio Blanco y Negro:", background='#ACE3DF')
-    label_precio_bn.pack(pady=5)
-    entry_precio_bn = tk.Entry(root)
-    entry_precio_bn.insert(0, str(precio_bn))
-    entry_precio_bn.pack(pady=5)
-
-    label_precio_color = tk.Label(root, text="Precio Color:", background='#ACE3DF')
-    label_precio_color.pack(pady=5)
-    entry_precio_color = tk.Entry(root)
-    entry_precio_color.insert(0, str(precio_color))
-    entry_precio_color.pack(pady=5)
-
-    btn_cambiar_precio = ttk.Button(root, text="Cambiar Precio", command=cambiar_precio)
-    btn_cambiar_precio.pack(pady=10)
+    check_color = tk.Checkbutton(frame_opciones, text="Color", variable=opcion_color, background='#ACE3DF')
+    check_color.pack(side=tk.LEFT, padx=10)
 
     btn_calcular = ttk.Button(root, text="Calcular Precio", command=calcular)
     btn_calcular.pack(pady=10)
