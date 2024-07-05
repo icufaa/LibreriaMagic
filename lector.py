@@ -1,4 +1,8 @@
-import fitz  # PyMuPDF
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    import pymupdf as fitz  # Alternativa para importar pymupdf en lugar de fitz
+
 import cv2
 import numpy as np
 import tkinter as tk
