@@ -1,12 +1,9 @@
-try:
-    import fitz  # PyMuPDF
-except ImportError:
-    import pymupdf as fitz  # Alternativa para importar pymupdf en lugar de fitz
-
+import fitz  # PyMuPDF
 import cv2
 import numpy as np
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
+from tkinter import filedialog, messagebox
 from PIL import Image
 
 # Variables globales para los precios de fotocopia según la tabla
@@ -123,53 +120,59 @@ def menu_interactivo():
         else:
             messagebox.showwarning("Advertencia", "Por favor, selecciona al menos un archivo PDF.")
 
-    root = tk.Tk()
+    root = ttk.Window(themename="darkly")
     root.title("Calculadora de Archivos")
     root.geometry("700x600")
-    root.config(background='#ACE3DF')
 
-    style = ttk.Style()
-    style.configure("TButton", padding=6, relief="flat", background="#CCC")
+    # Variables
+    global rutas_var, opcion_doble_faz, opcion_usuario, opcion_color
+    rutas_var = ttk.StringVar()
+    opcion_doble_faz = ttk.IntVar(value=0)
+    opcion_usuario = ttk.IntVar(value=0)
+    opcion_color = ttk.IntVar(value=0)
 
     # Menú
-    menu = tk.Menu(root)
+    menu = ttk.Menu(root)
     root.config(menu=menu)
-    archivo_menu = tk.Menu(menu, tearoff=0)
+    archivo_menu = ttk.Menu(menu, tearoff=0)
     menu.add_cascade(label="Archivo", menu=archivo_menu)
     archivo_menu.add_command(label="Salir", command=salir)
-    acciones_menu = tk.Menu(menu, tearoff=0)
+    acciones_menu = ttk.Menu(menu, tearoff=0)
     menu.add_cascade(label='Acciones', menu=acciones_menu)
     acciones_menu.add_command(label='Calcular Precio', command=calcular)
 
-    # Widgets
-    rutas_var = tk.StringVar()
-    opcion_doble_faz = tk.IntVar(value=0)
-    opcion_usuario = tk.IntVar(value=0)
-    opcion_color = tk.IntVar(value=0)
+    # Sección de Selección de Archivos
+    frame_seleccion = ttk.Frame(root, padding=20)
+    frame_seleccion.pack(fill=BOTH, expand=True)
 
-    label_instruccion = tk.Label(root, text="Selecciona uno o más archivos PDF y calcula el costo de las fotocopias.", background='#ACE3DF')
-    label_instruccion.pack(pady=20)
+    label_instruccion = ttk.Label(frame_seleccion, text="Selecciona uno o más archivos PDF y calcula el costo de las fotocopias.", font=("Arial", 14))
+    label_instruccion.pack(pady=10)
 
-    btn_seleccionar = ttk.Button(root, text="Seleccionar Archivos PDF", command=seleccionar_archivos)
+    btn_seleccionar = ttk.Button(frame_seleccion, text="Seleccionar Archivos PDF", command=seleccionar_archivos, bootstyle="info-outline")
     btn_seleccionar.pack(pady=10)
 
-    label_rutas = tk.Label(root, textvariable=rutas_var, background='#ACE3DF', wraplength=600)
+    label_rutas = ttk.Label(frame_seleccion, textvariable=rutas_var, wraplength=600, font=("Arial", 12))
     label_rutas.pack(pady=10)
 
-    frame_opciones = tk.Frame(root, background='#ACE3DF')
+    # Sección de Opciones
+    frame_opciones = ttk.Frame(frame_seleccion, padding=10)
     frame_opciones.pack(pady=10)
 
-    check_doble_faz = tk.Checkbutton(frame_opciones, text="Doble Faz", variable=opcion_doble_faz, background='#ACE3DF')
-    check_doble_faz.pack(side=tk.LEFT, padx=10)
+    check_doble_faz = ttk.Checkbutton(frame_opciones, text="Doble Faz", variable=opcion_doble_faz, bootstyle="success")
+    check_doble_faz.pack(side=LEFT, padx=10)
 
-    check_usuario = tk.Checkbutton(frame_opciones, text="Estudiante", variable=opcion_usuario, background='#ACE3DF')
-    check_usuario.pack(side=tk.LEFT, padx=10)
+    check_usuario = ttk.Checkbutton(frame_opciones, text="Estudiante", variable=opcion_usuario, bootstyle="success")
+    check_usuario.pack(side=LEFT, padx=10)
 
-    check_color = tk.Checkbutton(frame_opciones, text="Color", variable=opcion_color, background='#ACE3DF')
-    check_color.pack(side=tk.LEFT, padx=10)
+    check_color = ttk.Checkbutton(frame_opciones, text="Color", variable=opcion_color, bootstyle="success")
+    check_color.pack(side=LEFT, padx=10)
 
-    btn_calcular = ttk.Button(root, text="Calcular Precio", command=calcular)
-    btn_calcular.pack(pady=10)
+    # Botón de Calcular Precio
+    frame_calcular = ttk.Frame(frame_seleccion, padding=20)
+    frame_calcular.pack(pady=10)
+
+    btn_calcular = ttk.Button(frame_calcular, text="Calcular Precio", command=calcular, bootstyle="primary")
+    btn_calcular.pack()
 
     root.mainloop()
 
