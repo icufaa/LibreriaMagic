@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
-from tkinter import filedialog, messagebox, Toplevel, simpledialog
+from tkinter import filedialog, messagebox, Toplevel
 from tkinter import Canvas, Scrollbar, Frame
 from PIL import Image
 import pandas as pd
@@ -73,11 +73,19 @@ precios_publico, precios_estudiante = cargar_precios()
 def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color):
     precios = precios_estudiante if usuario == "estudiante" else precios_publico
 
-    ajuste_color = 1.0 + (4.0 * porcentaje_color) if color else 1.0  # 1.0 para B/N, hasta 5.0 para 100% color
+    # Ajuste de precio según porcentaje de color
+    precio_color = 100 + (porcentaje_color * 400)  # Precio base $100 y máximo $500
+    if 450 <= precio_color < 500:
+        precio_color = round(precio_color / 50) * 50  # Redondear al más cercano entre 450 y 500
+    elif 400 <= precio_color < 450:
+        precio_color = round(precio_color / 50) * 50  # Redondear al más cercano entre 400 y 450
+    precio_color = min(precio_color, 500)  # Limitar a un máximo de $500
+    if not color:
+        precio_color = 0  # No hay ajuste por color si no es a color
 
     for limite, precio in sorted(precios[tipo].items(), reverse=True):
         if cantidad >= limite:
-            return int(precio * ajuste_color)
+            return int(precio + precio_color)
     return 0
 
 def obtener_porcentaje_color(pagina):
@@ -92,15 +100,14 @@ def obtener_porcentaje_color(pagina):
     hsv = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
 
     # Definir umbral para detectar colores (excluyendo blanco y negro)
-    sensitivity = 60
-    lower_color = np.array([0, 0, 0])
-    upper_color = np.array([179, 255, 255])
+    lower_color = np.array([0, 50, 50])  # Umbral mínimo para colores, ajustado para excluir blancos y negros
+    upper_color = np.array([179, 255, 255])  # Umbral máximo para colores
 
     # Crear una máscara para los colores
     mask = cv2.inRange(hsv, lower_color, upper_color)
 
     # Calcular el porcentaje de área coloreada
-    color_percentage = np.sum(mask > sensitivity) / mask.size
+    color_percentage = np.sum(mask > 0) / mask.size
 
     return color_percentage
 
@@ -108,7 +115,6 @@ def calcular_precios(ruta_pdfs, doble_faz=False, usuario="publico", color=False)
     detalles_archivos = {}
     try:
         total_paginas = 0
-        total_color = 0
         total_costo_archivos = 0
         for ruta_pdf in ruta_pdfs:
             doc = fitz.open(ruta_pdf)
@@ -120,7 +126,6 @@ def calcular_precios(ruta_pdfs, doble_faz=False, usuario="publico", color=False)
 
             if doble_faz:
                 paginas_para_precio = (num_paginas + 1) // 2  # Redondear para arriba
-                paginas_para_precio += paginas_para_precio % 2  # Asegurar que sea par
                 tipo = "doble"
             else:
                 paginas_para_precio = num_paginas
@@ -192,11 +197,12 @@ def menu_interactivo():
                     for key in precios_publico[tipo]:
                         nuevo_precio = int(entry_publico[tipo][key].get())
                         precios_publico[tipo][key] = nuevo_precio
+
                 for tipo in precios_estudiante:
-                    for key in precios_estudiante[tipo]:
+                    if tipo in precios_estudiante[tipo]:
                         nuevo_precio = int(entry_estudiante[tipo][key].get())
                         precios_estudiante[tipo][key] = nuevo_precio
-                # Guardar precios en archivo Excel
+
                 guardar_precios(precios_publico, precios_estudiante)
                 editar_precios_window.destroy()
             except Exception as e:
