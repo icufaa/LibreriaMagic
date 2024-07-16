@@ -3,10 +3,11 @@ import cv2
 import numpy as np
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
-from tkinter import filedialog, messagebox, Toplevel
+from tkinter import filedialog, messagebox, Toplevel, StringVar, IntVar
 from PIL import Image
 import pandas as pd
 import os
+from tqdm import tqdm
 
 # Variables globales para los precios de fotocopia según la tabla
 PRECIOS_PATH = "precios.xlsx"
@@ -113,12 +114,25 @@ def obtener_porcentaje_color(pagina):
 
     return color_percentage
 
-def calcular_precios(ruta_pdfs, doble_faz=False, usuario="publico", color=False):
+def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=False):
     detalles_archivos = {}
     try:
         total_paginas = 0
         total_costo_archivos = 0
-        for ruta_pdf in ruta_pdfs:
+
+        # Crear la ventana de progreso
+        progress_window = Toplevel(root)
+        progress_window.title("Procesando PDFs")
+        progress_window.geometry("400x100")
+
+        # Crear la barra de progreso
+        progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
+        progress_bar.pack(pady=20)
+
+        # Establecer el valor máximo de la barra de progreso
+        progress_bar['maximum'] = len(ruta_pdfs)
+
+        for i, ruta_pdf in enumerate(ruta_pdfs):
             doc = fitz.open(ruta_pdf)
             num_paginas = len(doc)
             total_paginas += num_paginas
@@ -138,10 +152,18 @@ def calcular_precios(ruta_pdfs, doble_faz=False, usuario="publico", color=False)
             total_costo_archivos += costo_archivo
             detalles_archivos[ruta_pdf] = (num_paginas, costo_archivo)
 
+            # Actualizar la barra de progreso
+            progress_bar['value'] = i + 1
+            progress_window.update()
+
+        # Cerrar la ventana de progreso
+        progress_window.destroy()
+
         return total_costo_archivos, detalles_archivos
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo abrir el archivo PDF: {e}")
         return None, None
+
 
 def menu_interactivo():
     def salir():
@@ -158,7 +180,7 @@ def menu_interactivo():
             doble_faz = opcion_doble_faz.get() == 1
             usuario = "estudiante" if opcion_usuario.get() == 1 else "publico"
             color = opcion_color.get() == 1
-            total_copias, detalles_archivos = calcular_precios(rutas_pdfs, doble_faz, usuario, color)
+            total_copias, detalles_archivos = calcular_precios(root, rutas_pdfs, doble_faz, usuario, color)
             if total_copias is not None:
                 opciones_seleccionadas = (
                     f"Tipo de usuario: {'Estudiante' if usuario == 'estudiante' else 'Público'}\n"
@@ -166,7 +188,7 @@ def menu_interactivo():
                     f"Color: {'Sí' if color else 'No'}\n"
                 )
                 detalle_mensaje = "\n\n".join([f'Archivo: {ruta}\nHojas: {hojas}\nPrecio: ${precio}' 
-                                               for ruta, (hojas, precio) in detalles_archivos.items()])
+                                            for ruta, (hojas, precio) in detalles_archivos.items()])
                 messagebox.showinfo("Resultado", f'{opciones_seleccionadas}\nEl costo total de las fotocopias es: ${total_copias}\n\nDetalles:\n{detalle_mensaje}')
         else:
             messagebox.showwarning("Advertencia", "Por favor, selecciona al menos un archivo PDF.")
@@ -175,8 +197,12 @@ def menu_interactivo():
         def guardar_ajustes():
             global sensitivity  # Declarar sensibilidad como global
             try:
-                sensitivity = int(entry_sensitivity.get())
-                ajustes_window.destroy()
+                nueva_sensibilidad = int(entry_sensitivity.get())
+                if 0 <= nueva_sensibilidad <= 255:
+                    sensitivity = nueva_sensibilidad
+                    ajustes_window.destroy()
+                else:
+                    messagebox.showerror("Error", "El umbral de sensibilidad debe estar entre 0 y 255.")
             except ValueError:
                 messagebox.showerror("Error", "El umbral de sensibilidad debe ser un número entero.")
 
@@ -214,16 +240,16 @@ def menu_interactivo():
 
         editar_precios_window = Toplevel(root)
         editar_precios_window.title("Editar Precios")
-        editar_precios_window.geometry("500x400")
+        editar_precios_window.geometry("700x500")
 
         frame_publico = ttk.Frame(editar_precios_window)
-        frame_publico.pack(side="left", padx=20, pady=20)
+        frame_publico.pack(side="left", padx=20, pady=20, fill="y", expand=True)
 
         frame_estudiante = ttk.Frame(editar_precios_window)
-        frame_estudiante.pack(side="right", padx=20, pady=20)
+        frame_estudiante.pack(side="right", padx=20, pady=20, fill="y", expand=True)
 
-        ttk.Label(frame_publico, text="Público", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2)
-        ttk.Label(frame_estudiante, text="Estudiante", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2)
+        ttk.Label(frame_publico, text="Público - Simple Faz", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
+        ttk.Label(frame_estudiante, text="Estudiante - Simple Faz", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
 
         entry_publico = {"simple": {}, "doble": {}}
         entry_estudiante = {"simple": {}, "doble": {}}
@@ -231,9 +257,12 @@ def menu_interactivo():
         row = 1
         for tipo in precios_publico:
             for key in sorted(precios_publico[tipo].keys()):
-                ttk.Label(frame_publico, text=f"{key} hojas:").grid(row=row, column=0)
-                entry = ttk.Entry(frame_publico)
-                entry.grid(row=row, column=1)
+                if tipo == "doble":
+                    ttk.Label(frame_publico, text="Público - Doble Faz", font=("Arial", 12, "bold")).grid(row=row, column=0, columnspan=2, pady=10)
+                    row += 1
+                ttk.Label(frame_publico, text=f"{key} hojas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
+                entry = ttk.Entry(frame_publico, width=10)
+                entry.grid(row=row, column=1, padx=5, pady=5, sticky="w")
                 entry.insert(0, precios_publico[tipo][key])
                 entry_publico[tipo][key] = entry
                 row += 1
@@ -241,19 +270,24 @@ def menu_interactivo():
         row = 1
         for tipo in precios_estudiante:
             for key in sorted(precios_estudiante[tipo].keys()):
-                ttk.Label(frame_estudiante, text=f"{key} hojas:").grid(row=row, column=0)
-                entry = ttk.Entry(frame_estudiante)
-                entry.grid(row=row, column=1)
+                if tipo == "doble":
+                    ttk.Label(frame_estudiante, text="Estudiante - Doble Faz", font=("Arial", 12, "bold")).grid(row=row, column=0, columnspan=2, pady=10)
+                    row += 1
+                ttk.Label(frame_estudiante, text=f"{key} hojas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
+                entry = ttk.Entry(frame_estudiante, width=10)
+                entry.grid(row=row, column=1, padx=5, pady=5, sticky="w")
                 entry.insert(0, precios_estudiante[tipo][key])
                 entry_estudiante[tipo][key] = entry
                 row += 1
 
         btn_guardar = ttk.Button(editar_precios_window, text="Guardar", command=guardar_precios_editar, bootstyle="success")
-        btn_guardar.pack(pady=10)
+        btn_guardar.pack(pady=20)
+
 
     root = ttk.Window(themename="darkly")
     root.title("Calculadora de Fotocopias")
     root.geometry("800x600")
+
 
     marco_superior = ttk.Frame(root)
     marco_superior.pack(pady=20)
@@ -265,7 +299,7 @@ def menu_interactivo():
     marco_opciones.pack(pady=10)
 
     ttk.Label(marco_opciones, text="Archivos seleccionados:").grid(row=0, column=0, sticky="w")
-    rutas_var = ttk.StringVar()
+    rutas_var = StringVar()
     entry_rutas = ttk.Entry(marco_opciones, textvariable=rutas_var, width=60, state='readonly')
     entry_rutas.grid(row=1, column=0, padx=5, pady=5, sticky="we")
 
@@ -275,17 +309,17 @@ def menu_interactivo():
     marco_opciones_extra = ttk.Frame(root)
     marco_opciones_extra.pack(pady=10)
 
-    opcion_doble_faz = ttk.IntVar()
+    opcion_doble_faz = IntVar()
     chk_doble_faz = ttk.Checkbutton(marco_opciones_extra, text="Doble Faz", variable=opcion_doble_faz)
     chk_doble_faz.grid(row=0, column=0, padx=10, pady=5)
 
-    opcion_usuario = ttk.IntVar()
+    opcion_usuario = IntVar()
     rad_publico = ttk.Radiobutton(marco_opciones_extra, text="Público", variable=opcion_usuario, value=0)
     rad_publico.grid(row=0, column=1, padx=10, pady=5)
     rad_estudiante = ttk.Radiobutton(marco_opciones_extra, text="Estudiante", variable=opcion_usuario, value=1)
     rad_estudiante.grid(row=0, column=2, padx=10, pady=5)
 
-    opcion_color = ttk.IntVar()
+    opcion_color = IntVar()
     chk_color = ttk.Checkbutton(marco_opciones_extra, text="Color", variable=opcion_color)
     chk_color.grid(row=0, column=3, padx=10, pady=5)
 
