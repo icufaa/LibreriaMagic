@@ -17,8 +17,8 @@ sensitivity = 50  # Valor predeterminado para la sensibilidad
 def cargar_precios():
     if os.path.exists(PRECIOS_PATH):
         df = pd.read_excel(PRECIOS_PATH, sheet_name=None)
-        precios_publico = df['publico'].set_index('cantidad').T.to_dict('list')
-        precios_estudiante = df['estudiante'].set_index('cantidad').T.to_dict('list')
+        precios_publico = df['publico'].set_index('cantidad').T.fillna(0).to_dict('dict')
+        precios_estudiante = df['estudiante'].set_index('cantidad').T.fillna(0).to_dict('dict')
         
         # Convertir los valores a enteros
         for tipo in precios_publico:
@@ -59,6 +59,8 @@ def cargar_precios():
         }
         return precios_publico, precios_estudiante
 
+
+
 def guardar_precios(precios_publico, precios_estudiante):
     df_publico = pd.DataFrame(precios_publico).T.reset_index().rename(columns={'index': 'cantidad'})
     df_estudiante = pd.DataFrame(precios_estudiante).T.reset_index().rename(columns={'index': 'cantidad'})
@@ -78,10 +80,7 @@ def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color):
     # Ajuste de precio según porcentaje de color
     precio_color = 100 + (porcentaje_color * 400)  # Precio base $100 y máximo $500
     if color:
-        if 450 <= precio_color < 500:
-            precio_color = round(precio_color / 50) * 50  # Redondear al más cercano entre 450 y 500
-        elif 400 <= precio_color < 450:
-            precio_color = round(precio_color / 50) * 50  # Redondear al más cercano entre 400 y 450
+        precio_color = round(precio_color / 50) * 50  # Redondear al múltiplo de 50 más cercano
         precio_color = min(precio_color, 500)  # Limitar a un máximo de $500
     else:
         precio_color = 0  # No hay ajuste por color si no es a color
@@ -90,6 +89,8 @@ def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color):
         if cantidad >= limite:
             return int(precio + precio_color)
     return 0
+
+
 
 def obtener_porcentaje_color(pagina):
     # Convertir la página a una imagen de PIL
