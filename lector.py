@@ -8,6 +8,7 @@ from PIL import Image
 import pandas as pd
 import os
 from tqdm import tqdm
+from docx import Document
 
 # Variables globales para los precios de fotocopia según la tabla
 PRECIOS_PATH = "precios.xlsx"
@@ -59,8 +60,6 @@ def cargar_precios():
         }
         return precios_publico, precios_estudiante
 
-
-
 def guardar_precios(precios_publico, precios_estudiante):
     df_publico = pd.DataFrame(precios_publico).T.reset_index().rename(columns={'index': 'cantidad'})
     df_estudiante = pd.DataFrame(precios_estudiante).T.reset_index().rename(columns={'index': 'cantidad'})
@@ -74,23 +73,26 @@ def guardar_precios(precios_publico, precios_estudiante):
 
 precios_publico, precios_estudiante = cargar_precios()
 
-def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color):
+def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color, tamano_hoja):
     precios = precios_estudiante if usuario == "estudiante" else precios_publico
 
-    # Ajuste de precio según porcentaje de color
-    precio_color = 100 + (porcentaje_color * 400)  # Precio base $100 y máximo $500
-    if color:
-        precio_color = round(precio_color / 50) * 50  # Redondear al múltiplo de 50 más cercano
-        precio_color = min(precio_color, 500)  # Limitar a un máximo de $500
+    if tamano_hoja == "A3":
+        if color:
+            precio_color = 1000  # Precio fijo para A3 a color
+        else:
+            precio_color = 200  # Precio fijo para A3 blanco y negro
     else:
-        precio_color = 0  # No hay ajuste por color si no es a color
+        precio_color = 100 + (porcentaje_color * 400)  # Precio base $100 y máximo $500 para A4
+        if color:
+            precio_color = round(precio_color / 50) * 50  # Redondear al múltiplo de 50 más cercano
+            precio_color = min(precio_color, 500)  # Limitar a un máximo de $500
+        else:
+            precio_color = 0  # No hay ajuste por color si no es a color
 
     for limite, precio in sorted(precios[tipo].items(), reverse=True):
         if cantidad >= limite:
             return int(precio + precio_color)
     return 0
-
-
 
 def obtener_porcentaje_color(pagina):
     # Convertir la página a una imagen de PIL
@@ -115,7 +117,7 @@ def obtener_porcentaje_color(pagina):
 
     return color_percentage
 
-def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=False):
+def calcular_precios(root, rutas, doble_faz=False, usuario="publico", color=False, tamano_hoja="A4"):
     detalles_archivos = {}
     try:
         total_paginas = 0
@@ -123,7 +125,7 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
 
         # Crear la ventana de progreso
         progress_window = Toplevel(root)
-        progress_window.title("Procesando PDFs")
+        progress_window.title("Procesando archivos")
         progress_window.geometry("400x100")
 
         # Crear la barra de progreso
@@ -131,15 +133,23 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
         progress_bar.pack(pady=20)
 
         # Establecer el valor máximo de la barra de progreso
-        progress_bar['maximum'] = len(ruta_pdfs)
+        progress_bar['maximum'] = len(rutas)
 
-        for i, ruta_pdf in enumerate(ruta_pdfs):
-            doc = fitz.open(ruta_pdf)
-            num_paginas = len(doc)
+        for i, ruta in enumerate(rutas):
+            ext = os.path.splitext(ruta)[1].lower()
+            if ext == ".pdf":
+                doc = fitz.open(ruta)
+                num_paginas = len(doc)
+                color_paginas = sum(obtener_porcentaje_color(pagina) for pagina in doc)
+            elif ext == ".docx":
+                doc = Document(ruta)
+                num_paginas = len(doc.paragraphs)
+                color_paginas = 0  # No implementado para DOCX
+            else:
+                raise ValueError(f"Formato de archivo no soportado: {ext}")
+
             total_paginas += num_paginas
-
-            color_paginas = sum(obtener_porcentaje_color(pagina) for pagina in doc)
-            porcentaje_color_promedio = color_paginas / num_paginas
+            porcentaje_color_promedio = color_paginas / num_paginas if num_paginas else 0
 
             if doble_faz:
                 paginas_para_precio = (num_paginas + 1) // 2  # Redondear para arriba
@@ -148,10 +158,10 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
                 paginas_para_precio = num_paginas
                 tipo = "simple"
 
-            precio_fotocopia = obtener_precio(paginas_para_precio, tipo, usuario, porcentaje_color_promedio, color)
+            precio_fotocopia = obtener_precio(paginas_para_precio, tipo, usuario, porcentaje_color_promedio, color, tamano_hoja)
             costo_archivo = paginas_para_precio * precio_fotocopia
             total_costo_archivos += costo_archivo
-            detalles_archivos[ruta_pdf] = (num_paginas, costo_archivo)
+            detalles_archivos[ruta] = (num_paginas, costo_archivo)
 
             # Actualizar la barra de progreso
             progress_bar['value'] = i + 1
@@ -162,37 +172,38 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
 
         return total_costo_archivos, detalles_archivos
     except Exception as e:
-        messagebox.showerror("Error", f"No se pudo abrir el archivo PDF: {e}")
+        messagebox.showerror("Error", f"No se pudo abrir el archivo: {e}")
         return None, None
-
 
 def menu_interactivo():
     def salir():
         root.destroy()
 
     def seleccionar_archivos():
-        rutas_pdfs = filedialog.askopenfilenames(filetypes=[("Archivos PDF", "*.pdf")])
-        if rutas_pdfs:
-            rutas_var.set(", ".join(rutas_pdfs))
+        rutas = filedialog.askopenfilenames(filetypes=[("Archivos PDF y DOCX", "*.pdf;*.docx")])
+        if rutas:
+            rutas_var.set(", ".join(rutas))
 
     def calcular():
-        rutas_pdfs = rutas_var.get().split(", ")
-        if rutas_pdfs:
+        rutas = rutas_var.get().split(", ")
+        if rutas:
             doble_faz = opcion_doble_faz.get() == 1
             usuario = "estudiante" if opcion_usuario.get() == 1 else "publico"
             color = opcion_color.get() == 1
-            total_copias, detalles_archivos = calcular_precios(root, rutas_pdfs, doble_faz, usuario, color)
-            if total_copias is not None:
+            tamano_hoja = "A3" if opcion_tamano_hoja.get() == 1 else "A4"
+            total_copias, detalles_archivos = calcular_precios(root, rutas, doble_faz, usuario, color, tamano_hoja)
+            if total_copias:
                 opciones_seleccionadas = (
                     f"Tipo de usuario: {'Estudiante' if usuario == 'estudiante' else 'Público'}\n"
                     f"Tipo de fotocopia: {'Doble faz' if doble_faz else 'Simple'}\n"
                     f"Color: {'Sí' if color else 'No'}\n"
+                    f"Tamaño de hoja: {tamano_hoja}\n"
                 )
                 detalle_mensaje = "\n\n".join([f'Archivo: {ruta}\nHojas: {hojas}\nPrecio: ${precio}' 
                                             for ruta, (hojas, precio) in detalles_archivos.items()])
                 messagebox.showinfo("Resultado", f'{opciones_seleccionadas}\nEl costo total de las fotocopias es: ${total_copias}\n\nDetalles:\n{detalle_mensaje}')
         else:
-            messagebox.showwarning("Advertencia", "Por favor, selecciona al menos un archivo PDF.")
+            messagebox.showwarning("Advertencia", "Por favor, selecciona al menos un archivo PDF o DOCX.")
 
     def mostrar_ventana_ajustes():
         def guardar_ajustes():
@@ -205,137 +216,115 @@ def menu_interactivo():
                 else:
                     messagebox.showerror("Error", "El umbral de sensibilidad debe estar entre 0 y 255.")
             except ValueError:
-                messagebox.showerror("Error", "El umbral de sensibilidad debe ser un número entero.")
+                messagebox.showerror("Error", "Por favor, ingrese un valor válido para el umbral de sensibilidad.")
 
         ajustes_window = Toplevel(root)
-        ajustes_window.title("Ajustes Avanzados")
-        ajustes_window.geometry("300x200")
+        ajustes_window.title("Ajustes")
+        ajustes_window.geometry("300x150")
 
-        label_sensitivity = ttk.Label(ajustes_window, text="Umbral de Sensibilidad para Detección de Color:", font=("Arial", 12))
+        label_sensitivity = ttk.Label(ajustes_window, text="Umbral de Sensibilidad (0-255):")
         label_sensitivity.pack(pady=10)
 
         entry_sensitivity = ttk.Entry(ajustes_window)
-        entry_sensitivity.pack(pady=10)
-        entry_sensitivity.insert(0, sensitivity)
+        entry_sensitivity.insert(0, str(sensitivity))
+        entry_sensitivity.pack(pady=5)
 
-        btn_guardar = ttk.Button(ajustes_window, text="Guardar", command=guardar_ajustes, bootstyle="success")
-        btn_guardar.pack(pady=10)
+        boton_guardar = ttk.Button(ajustes_window, text="Guardar", command=guardar_ajustes)
+        boton_guardar.pack(pady=20)
 
-    def mostrar_ventana_editar_precios():
-        def guardar_precios_editar():
+    def mostrar_ventana_precios():
+        def actualizar_precios():
             try:
-                for tipo in precios_publico:
-                    for key in precios_publico[tipo]:
-                        nuevo_precio = int(entry_publico[tipo][key].get())
-                        precios_publico[tipo][key] = nuevo_precio
-
-                for tipo in precios_estudiante:
-                    for key in precios_estudiante[tipo]:
-                        nuevo_precio = int(entry_estudiante[tipo][key].get())
-                        precios_estudiante[tipo][key] = nuevo_precio
-
-                guardar_precios(precios_publico, precios_estudiante)
-                editar_precios_window.destroy()
+                nuevas_tablas = {}
+                for usuario in ['publico', 'estudiante']:
+                    nuevas_tablas[usuario] = {}
+                    for tipo in ['simple', 'doble']:
+                        nueva_tabla = {}
+                        for key, entry in entries[usuario][tipo].items():
+                            nueva_tabla[int(key)] = int(entry.get())
+                        nuevas_tablas[usuario][tipo] = nueva_tabla
+                guardar_precios(nuevas_tablas['publico'], nuevas_tablas['estudiante'])
+                precios_publico.update(nuevas_tablas['publico'])
+                precios_estudiante.update(nuevas_tablas['estudiante'])
+                precios_window.destroy()
             except ValueError:
-                messagebox.showerror("Error", "Todos los campos deben ser números enteros.")
+                messagebox.showerror("Error", "Por favor, ingrese valores numéricos válidos para los precios.")
 
-        editar_precios_window = Toplevel(root)
-        editar_precios_window.title("Editar Precios")
-        editar_precios_window.geometry("700x500")
+        precios_window = Toplevel(root)
+        precios_window.title("Precios")
+        precios_window.geometry("500x500")
 
-        frame_publico = ttk.Frame(editar_precios_window)
-        frame_publico.pack(side="left", padx=20, pady=20, fill="y", expand=True)
+        frame = ttk.Frame(precios_window)
+        frame.pack(pady=10, padx=10)
 
-        frame_estudiante = ttk.Frame(editar_precios_window)
-        frame_estudiante.pack(side="right", padx=20, pady=20, fill="y", expand=True)
+        notebook = ttk.Notebook(frame)
+        notebook.pack()
 
-        ttk.Label(frame_publico, text="Público - Simple Faz", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
-        ttk.Label(frame_estudiante, text="Estudiante - Simple Faz", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
+        entries = {'publico': {'simple': {}, 'doble': {}}, 'estudiante': {'simple': {}, 'doble': {}}}
 
-        entry_publico = {"simple": {}, "doble": {}}
-        entry_estudiante = {"simple": {}, "doble": {}}
+        for usuario in ['publico', 'estudiante']:
+            user_frame = ttk.Frame(notebook)
+            notebook.add(user_frame, text=usuario.capitalize())
 
-        row = 1
-        for tipo in precios_publico:
-            for key in sorted(precios_publico[tipo].keys()):
-                if tipo == "doble":
-                    ttk.Label(frame_publico, text="Público - Doble Faz", font=("Arial", 12, "bold")).grid(row=row, column=0, columnspan=2, pady=10)
-                    row += 1
-                ttk.Label(frame_publico, text=f"{key} hojas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
-                entry = ttk.Entry(frame_publico, width=10)
-                entry.grid(row=row, column=1, padx=5, pady=5, sticky="w")
-                entry.insert(0, precios_publico[tipo][key])
-                entry_publico[tipo][key] = entry
-                row += 1
+            for tipo in ['simple', 'doble']:
+                tipo_frame = ttk.Frame(user_frame)
+                tipo_frame.pack(pady=10)
 
-        row = 1
-        for tipo in precios_estudiante:
-            for key in sorted(precios_estudiante[tipo].keys()):
-                if tipo == "doble":
-                    ttk.Label(frame_estudiante, text="Estudiante - Doble Faz", font=("Arial", 12, "bold")).grid(row=row, column=0, columnspan=2, pady=10)
-                    row += 1
-                ttk.Label(frame_estudiante, text=f"{key} hojas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
-                entry = ttk.Entry(frame_estudiante, width=10)
-                entry.grid(row=row, column=1, padx=5, pady=5, sticky="w")
-                entry.insert(0, precios_estudiante[tipo][key])
-                entry_estudiante[tipo][key] = entry
-                row += 1
+                ttk.Label(tipo_frame, text=f"Precios para {tipo} faz:").pack()
+                precios = precios_publico if usuario == 'publico' else precios_estudiante
+                for key, value in sorted(precios[tipo].items()):
+                    row_frame = ttk.Frame(tipo_frame)
+                    row_frame.pack(pady=2)
+                    ttk.Label(row_frame, text=f"{key} páginas o más:").pack(side='left')
+                    entry = ttk.Entry(row_frame, width=10)
+                    entry.insert(0, str(value))
+                    entry.pack(side='left')
+                    entries[usuario][tipo][key] = entry
 
-        btn_guardar = ttk.Button(editar_precios_window, text="Guardar", command=guardar_precios_editar, bootstyle="success")
-        btn_guardar.pack(pady=20)
+        boton_actualizar = ttk.Button(precios_window, text="Actualizar Precios", command=actualizar_precios)
+        boton_actualizar.pack(pady=20)
 
+    root = ttk.Window(themename="superhero")
+    root.title("Calculadora de Precios de Fotocopias")
+    root.geometry("500x400")
 
-    root = ttk.Window(themename="darkly")
-    root.title("Calculadora de Fotocopias")
-    root.geometry("800x600")
-
-
-    marco_superior = ttk.Frame(root)
-    marco_superior.pack(pady=20)
-
-    etiqueta_titulo = ttk.Label(marco_superior, text="Calculadora de Fotocopias", font=("Arial", 24, "bold"))
-    etiqueta_titulo.pack()
-
-    marco_opciones = ttk.Frame(root)
-    marco_opciones.pack(pady=10)
-
-    ttk.Label(marco_opciones, text="Archivos seleccionados:").grid(row=0, column=0, sticky="w")
     rutas_var = StringVar()
-    entry_rutas = ttk.Entry(marco_opciones, textvariable=rutas_var, width=60, state='readonly')
-    entry_rutas.grid(row=1, column=0, padx=5, pady=5, sticky="we")
-
-    btn_seleccionar = ttk.Button(marco_opciones, text="Seleccionar Archivos", command=seleccionar_archivos)
-    btn_seleccionar.grid(row=1, column=1, padx=5, pady=5)
-
-    marco_opciones_extra = ttk.Frame(root)
-    marco_opciones_extra.pack(pady=10)
 
     opcion_doble_faz = IntVar()
-    chk_doble_faz = ttk.Checkbutton(marco_opciones_extra, text="Doble Faz", variable=opcion_doble_faz)
-    chk_doble_faz.grid(row=0, column=0, padx=10, pady=5)
-
     opcion_usuario = IntVar()
-    rad_publico = ttk.Radiobutton(marco_opciones_extra, text="Público", variable=opcion_usuario, value=0)
-    rad_publico.grid(row=0, column=1, padx=10, pady=5)
-    rad_estudiante = ttk.Radiobutton(marco_opciones_extra, text="Estudiante", variable=opcion_usuario, value=1)
-    rad_estudiante.grid(row=0, column=2, padx=10, pady=5)
-
     opcion_color = IntVar()
-    chk_color = ttk.Checkbutton(marco_opciones_extra, text="Color", variable=opcion_color)
-    chk_color.grid(row=0, column=3, padx=10, pady=5)
+    opcion_tamano_hoja = IntVar()  # Nueva variable para el tamaño de hoja
 
-    btn_calcular = ttk.Button(root, text="Calcular", command=calcular, bootstyle="primary")
-    btn_calcular.pack(pady=10)
+    ttk.Label(root, text="Calculadora de Precios de Fotocopias", font=("Helvetica", 16)).pack(pady=20)
+    
+    ttk.Button(root, text="Seleccionar archivos PDF o DOCX", command=seleccionar_archivos).pack(pady=10)
+    ttk.Entry(root, textvariable=rutas_var, state='readonly').pack(fill='x', padx=50, pady=5)
 
-    btn_ajustes = ttk.Button(root, text="Ajustes Avanzados", command=mostrar_ventana_ajustes, bootstyle="secondary")
-    btn_ajustes.pack(pady=5)
+    frame_opciones = ttk.Frame(root)
+    frame_opciones.pack(pady=10)
 
-    btn_editar_precios = ttk.Button(root, text="Editar Precios", command=mostrar_ventana_editar_precios, bootstyle="secondary")
-    btn_editar_precios.pack(pady=5)
+    ttk.Checkbutton(frame_opciones, text="Doble faz", variable=opcion_doble_faz).grid(row=0, column=0, padx=10)
+    ttk.Radiobutton(frame_opciones, text="Público", variable=opcion_usuario, value=0).grid(row=0, column=1, padx=10)
+    ttk.Radiobutton(frame_opciones, text="Estudiante", variable=opcion_usuario, value=1).grid(row=0, column=2, padx=10)
+    ttk.Checkbutton(frame_opciones, text="Color", variable=opcion_color).grid(row=0, column=3, padx=10)
+    ttk.Radiobutton(frame_opciones, text="A4", variable=opcion_tamano_hoja, value=0).grid(row=0, column=4, padx=10)  # Opción A4
+    ttk.Radiobutton(frame_opciones, text="A3", variable=opcion_tamano_hoja, value=1).grid(row=0, column=5, padx=10)  # Opción A3
 
-    btn_salir = ttk.Button(root, text="Salir", command=salir, bootstyle="danger")
-    btn_salir.pack(pady=10)
+    ttk.Button(root, text="Calcular Precios", command=calcular).pack(pady=20)
+
+    menu_bar = ttk.Menu(root)
+    root.config(menu=menu_bar)
+    
+    archivo_menu = ttk.Menu(menu_bar, tearoff=0)
+    menu_bar.add_cascade(label="Archivo", menu=archivo_menu)
+    archivo_menu.add_command(label="Salir", command=salir)
+    
+    ajustes_menu = ttk.Menu(menu_bar, tearoff=0)
+    menu_bar.add_cascade(label="Ajustes", menu=ajustes_menu)
+    ajustes_menu.add_command(label="Configuración de Sensibilidad", command=mostrar_ventana_ajustes)
+    ajustes_menu.add_command(label="Configuración de Precios", command=mostrar_ventana_precios)
 
     root.mainloop()
 
-menu_interactivo()
+if __name__ == "__main__":
+    menu_interactivo()
