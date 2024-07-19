@@ -9,6 +9,8 @@ import pandas as pd
 import os
 from tqdm import tqdm
 from docx import Document
+import docx2txt
+import tempfile
 
 # Variables globales para los precios de fotocopia según la tabla
 PRECIOS_PATH = "precios.xlsx"
@@ -94,6 +96,7 @@ def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color, tamano_hoja
             return int(precio + precio_color)
     return 0
 
+
 def obtener_porcentaje_color(pagina):
     # Convertir la página a una imagen de PIL
     pix = pagina.get_pixmap()
@@ -116,6 +119,62 @@ def obtener_porcentaje_color(pagina):
     color_percentage = np.sum(mask > 0) / mask.size
 
     return color_percentage
+
+def obtener_porcentaje_color_docx(ruta):
+    try:
+        # Crear una carpeta temporal para guardar las imágenes extraídas
+        temp_dir = tempfile.mkdtemp()
+        images_path = os.path.join(temp_dir, "docx_images")
+        
+        # Extraer todas las imágenes del DOCX en la carpeta temporal
+        extraidas = docx2txt.process(ruta, images_path)
+
+        print(f"Imágenes extraídas: {extraidas}")  # Mensaje de depuración
+
+        # Verificar si las imágenes han sido extraídas
+        if not os.path.exists(images_path) or not os.listdir(images_path):
+            print("No se encontraron imágenes.")
+            return 0
+
+        total_color_percentage = 0
+        image_files = [f for f in os.listdir(images_path) if os.path.isfile(os.path.join(images_path, f))]
+        
+        print(f"Archivos de imagen encontrados: {image_files}")  # Mensaje de depuración
+
+        for image_file in image_files:
+            img_path = os.path.join(images_path, image_file)
+            print(f"Procesando imagen: {img_path}")  # Mensaje de depuración
+
+            img = Image.open(img_path)
+            img_np = np.array(img)
+
+            # Convertir la imagen a espacio de color HSV
+            hsv = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
+
+            # Definir umbral para detectar colores (excluyendo blanco y negro)
+            sensitivity = 60
+            lower_color = np.array([0, sensitivity, sensitivity])
+            upper_color = np.array([179, 255, 255])
+
+            # Crear una máscara para los colores
+            mask = cv2.inRange(hsv, lower_color, upper_color)
+
+            # Calcular el porcentaje de área coloreada
+            color_percentage = np.sum(mask > 0) / mask.size
+            total_color_percentage += color_percentage
+
+        # Limpiar los archivos temporales
+        for image_file in image_files:
+            os.remove(os.path.join(images_path, image_file))
+        os.rmdir(images_path)
+        os.rmdir(temp_dir)
+
+        return total_color_percentage / len(image_files) if image_files else 0
+    except Exception as e:
+        print(f"Error al procesar el archivo DOCX: {e}")
+        return 0
+
+
 
 def calcular_precios(root, rutas, doble_faz=False, usuario="publico", color=False, tamano_hoja="A4"):
     detalles_archivos = {}
@@ -144,7 +203,7 @@ def calcular_precios(root, rutas, doble_faz=False, usuario="publico", color=Fals
             elif ext == ".docx":
                 doc = Document(ruta)
                 num_paginas = len(doc.paragraphs)
-                color_paginas = 0  # No implementado para DOCX
+                color_paginas = obtener_porcentaje_color_docx(ruta)
             else:
                 raise ValueError(f"Formato de archivo no soportado: {ext}")
 
@@ -174,6 +233,8 @@ def calcular_precios(root, rutas, doble_faz=False, usuario="publico", color=Fals
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo abrir el archivo: {e}")
         return None, None
+
+
 
 def menu_interactivo():
     def salir():
