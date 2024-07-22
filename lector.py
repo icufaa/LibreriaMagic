@@ -84,8 +84,10 @@ def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color, tamano_hoja
         else:
             precio_color = 200  # Precio fijo para A3 blanco y negro
     else:
-        precio_color = 100 + (porcentaje_color * 400)  # Precio base $100 y máximo $500 para A4
         if color:
+            precio_base_color = 100  # Precio base para A4 color
+            incremento_color = porcentaje_color * 400  # Incremento por porcentaje de color
+            precio_color = precio_base_color + incremento_color
             precio_color = round(precio_color / 50) * 50  # Redondear al múltiplo de 50 más cercano
             precio_color = min(precio_color, 500)  # Limitar a un máximo de $500
         else:
@@ -93,8 +95,9 @@ def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color, tamano_hoja
 
     for limite, precio in sorted(precios[tipo].items(), reverse=True):
         if cantidad >= limite:
-            return int(precio + precio_color)
+            return int(precio) + int(precio_color)
     return 0
+
 
 
 def obtener_porcentaje_color(pagina):
@@ -126,10 +129,12 @@ def obtener_porcentaje_color_docx(ruta):
         temp_dir = tempfile.mkdtemp()
         images_path = os.path.join(temp_dir, "docx_images")
         
+        # Asegurarse de que el directorio de imágenes existe
+        os.makedirs(images_path, exist_ok=True)
+        
         # Extraer todas las imágenes del DOCX en la carpeta temporal
         extraidas = docx2txt.process(ruta, images_path)
-
-        print(f"Imágenes extraídas: {extraidas}")  # Mensaje de depuración
+        print(f"Texto extraído: {extraidas}")  # Mensaje de depuración
 
         # Verificar si las imágenes han sido extraídas
         if not os.path.exists(images_path) or not os.listdir(images_path):
@@ -145,6 +150,10 @@ def obtener_porcentaje_color_docx(ruta):
             img_path = os.path.join(images_path, image_file)
             print(f"Procesando imagen: {img_path}")  # Mensaje de depuración
 
+            if not os.path.exists(img_path):
+                print(f"Error: {img_path} no existe.")
+                continue
+
             img = Image.open(img_path)
             img_np = np.array(img)
 
@@ -152,8 +161,7 @@ def obtener_porcentaje_color_docx(ruta):
             hsv = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
 
             # Definir umbral para detectar colores (excluyendo blanco y negro)
-            sensitivity = 60
-            lower_color = np.array([0, sensitivity, sensitivity])
+            lower_color = np.array([0, sensitivity, sensitivity])  # Usar sensibilidad global
             upper_color = np.array([179, 255, 255])
 
             # Crear una máscara para los colores
@@ -161,6 +169,8 @@ def obtener_porcentaje_color_docx(ruta):
 
             # Calcular el porcentaje de área coloreada
             color_percentage = np.sum(mask > 0) / mask.size
+            print(f"Porcentaje de color para {img_path}: {color_percentage}")
+
             total_color_percentage += color_percentage
 
         # Limpiar los archivos temporales
@@ -173,6 +183,8 @@ def obtener_porcentaje_color_docx(ruta):
     except Exception as e:
         print(f"Error al procesar el archivo DOCX: {e}")
         return 0
+
+
 
 
 
