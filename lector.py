@@ -8,8 +8,9 @@ from PIL import Image
 import pandas as pd
 import os
 from tqdm import tqdm
-from fpdf import FPDF  # para convertir imágenes y texto a PDF
-from docx2pdf import convert as convert_docx  # ya importado
+from docx2pdf import convert as convert_docx
+import tempfile
+import shutil
 
 
 # Variables globales para los precios de fotocopia según la tabla
@@ -167,7 +168,39 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo abrir el archivo PDF: {e}")
         return None, None
-    
+
+def convertir_a_pdf():
+    archivo = filedialog.askopenfilename(filetypes=[("Todos los archivos", "*.*")])
+    if archivo:
+        pdf_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("Archivo PDF", "*.pdf")])
+        if pdf_path:
+            try:
+                extension = os.path.splitext(archivo)[1].lower()
+                temp_dir = tempfile.mkdtemp()
+                if extension in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']:
+                    imagen = Image.open(archivo)
+                    imagen.convert("RGB").save(pdf_path)
+                elif extension in ['.txt']:
+                    with open(archivo, 'r', encoding='utf-8') as f:
+                        contenido = f.read()
+                    doc = fitz.open()
+                    pagina = doc.new_page()
+                    pagina.insert_text((72, 72), contenido, fontsize=12)
+                    doc.save(pdf_path)
+                elif extension in ['.pdf']:
+                    shutil.copyfile(archivo, pdf_path)
+                elif extension in ['.doc', '.docx']:
+                    temp_pdf = os.path.join(temp_dir, "temp.pdf")
+                    convert_docx(archivo, temp_pdf)
+                    shutil.copyfile(temp_pdf, pdf_path)
+                else:
+                    messagebox.showwarning("Advertencia", "Tipo de archivo no soportado para conversión.")
+                    shutil.rmtree(temp_dir)
+                    return
+                messagebox.showinfo("Éxito", f"El archivo {os.path.basename(archivo)} se ha convertido a PDF.")
+                shutil.rmtree(temp_dir)
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo convertir el archivo a PDF: {e}")
   
 
 
@@ -330,8 +363,12 @@ def menu_interactivo():
     chk_color = ttk.Checkbutton(marco_opciones_extra, text="Color", variable=opcion_color)
     chk_color.grid(row=0, column=3, padx=10, pady=5)
 
+
     btn_calcular = ttk.Button(root, text="Calcular", command=calcular, bootstyle="primary")
     btn_calcular.pack(pady=10)
+
+    btn_convertir_pdf = ttk.Button(root, text="Convertir a PDF", command=convertir_a_pdf, bootstyle="secondary")
+    btn_convertir_pdf.pack(pady=5)
 
     btn_ajustes = ttk.Button(root, text="Ajustes Avanzados", command=mostrar_ventana_ajustes, bootstyle="secondary")
     btn_ajustes.pack(pady=5)
