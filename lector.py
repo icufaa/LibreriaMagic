@@ -197,7 +197,7 @@ def convertir_a_pdf():
                     messagebox.showwarning("Advertencia", "Tipo de archivo no soportado para conversión.")
                     shutil.rmtree(temp_dir)
                     return
-                messagebox.showinfo("Éxito", f"El archivo {os.path.basename(archivo)} se ha convertido a PDF.")
+                messagebox.showinfo("Éxito", f"El archivzo {os.path.basename(archivo)} se ha convertido a PDF.")
                 shutil.rmtree(temp_dir)
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudo convertir el archivo a PDF: {e}")
@@ -212,8 +212,44 @@ def menu_interactivo():
         rutas_pdfs = filedialog.askopenfilenames(filetypes=[("Archivos PDF", "*.pdf")])
         if rutas_pdfs:
             rutas_var.set(", ".join(rutas_pdfs))
-    
 
+    
+    def mostrar_ventana_detalles(total_copias, detalles_archivos, opciones_seleccionadas):
+        detalles_window = Toplevel(root)
+        detalles_window.title("Detalles de Archivos")
+        detalles_window.geometry("600x400")
+
+        canvas = ttk.Canvas(detalles_window)
+        scrollbar = ttk.Scrollbar(detalles_window, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        ttk.Label(scrollable_frame, text="Opciones seleccionadas:", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, padx=5, pady=5)
+        ttk.Label(scrollable_frame, text=opciones_seleccionadas).grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+
+        ttk.Label(scrollable_frame, text=f"Costo total de las fotocopias: ${total_copias}", font=("Arial", 12, "bold")).grid(row=2, column=0, columnspan=2, padx=5, pady=5)
+
+        row = 3
+        for ruta, (hojas, precio) in detalles_archivos.items():
+            ttk.Label(scrollable_frame, text=f"Archivo: {os.path.basename(ruta)}", font=("Arial", 12, "bold")).grid(row=row, column=0, padx=5, pady=5, sticky="w")
+            row += 1
+            ttk.Label(scrollable_frame, text=f"Hojas: {hojas}").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+            ttk.Label(scrollable_frame, text=f"Precio: ${precio}").grid(row=row, column=1, padx=5, pady=5, sticky="w")
+            row += 1
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+    
     def calcular():
         rutas_pdfs = rutas_var.get().split(", ")
         if rutas_pdfs:
@@ -227,9 +263,7 @@ def menu_interactivo():
                     f"Tipo de fotocopia: {'Doble faz' if doble_faz else 'Simple'}\n"
                     f"Color: {'Sí' if color else 'No'}\n"
                 )
-                detalle_mensaje = "\n\n".join([f'Archivo: {ruta}\nHojas: {hojas}\nPrecio: ${precio}' 
-                                            for ruta, (hojas, precio) in detalles_archivos.items()])
-                messagebox.showinfo("Resultado", f'{opciones_seleccionadas}\nEl costo total de las fotocopias es: ${total_copias}\n\nDetalles:\n{detalle_mensaje}')
+                mostrar_ventana_detalles(total_copias, detalles_archivos, opciones_seleccionadas)
         else:
             messagebox.showwarning("Advertencia", "Por favor, selecciona al menos un archivo PDF.")
 
