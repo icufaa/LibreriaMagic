@@ -108,7 +108,7 @@ def obtener_porcentaje_color(pagina):
     hsv = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
 
     # Definir umbral para detectar colores (excluyendo blanco y negro)
-    lower_color = np.array([0, sensitivity, sensitivity])  # Usar sensibilidad global
+    lower_color = np.array([sensitivity, sensitivity, sensitivity])  # Usar sensibilidad global
     upper_color = np.array([179, 255, 255])  # Umbral máximo para colores
 
     # Crear una máscara para los colores
@@ -145,7 +145,7 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
             color_paginas = sum(obtener_porcentaje_color(pagina) for pagina in doc)
             porcentaje_color_promedio = color_paginas / num_paginas
 
-            if doble_faz:
+            if doble_faz and not color:
                 paginas_para_precio = (num_paginas + 1) // 2  # Redondear para arriba
                 tipo = "doble"
             else:
@@ -168,6 +168,7 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo abrir el archivo PDF: {e}")
         return None, None
+
 
 def convertir_a_pdf():
     archivo = filedialog.askopenfilename(filetypes=[("Todos los archivos", "*.*")])
