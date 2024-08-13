@@ -48,16 +48,14 @@ def cargar_precios():
 
         precios_estudiante = {
             "simple": {
-                1:100,
-                10: 50,
-                20: 50,
-                80: 40,
+                1:80,
+                6:60,
+                50: 50,
                 100: 40
             },
             "doble": {
                 1:100,
-                10: 80,
-                20: 80,
+                30: 80,
                 100: 70
             }
         }
@@ -124,6 +122,7 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
     try:
         total_paginas = 0
         total_costo_archivos = 0
+        color_paginas = 0
 
         # Crear la ventana de progreso
         progress_window = Toplevel(root)
@@ -142,24 +141,26 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
             num_paginas = len(doc)
             total_paginas += num_paginas
 
-            color_paginas = sum(obtener_porcentaje_color(pagina) for pagina in doc)
-            porcentaje_color_promedio = color_paginas / num_paginas
-
-            if doble_faz and not color:
-                paginas_para_precio = (num_paginas + 1) // 2  # Redondear para arriba
-                tipo = "doble"
-            else:
-                paginas_para_precio = num_paginas
-                tipo = "simple"
-
-            precio_fotocopia = obtener_precio(paginas_para_precio, tipo, usuario, porcentaje_color_promedio, color)
-            costo_archivo = paginas_para_precio * precio_fotocopia
-            total_costo_archivos += costo_archivo
-            detalles_archivos[ruta_pdf] = (num_paginas, costo_archivo)
+            color_paginas += sum(obtener_porcentaje_color(pagina) for pagina in doc)
 
             # Actualizar la barra de progreso
             progress_bar['value'] = i + 1
             progress_window.update()
+
+        porcentaje_color_promedio = color_paginas / total_paginas
+
+        if doble_faz and not color:
+            paginas_para_precio = (total_paginas + 1) // 2  # Redondear para arriba
+            tipo = "doble"
+        else:
+            paginas_para_precio = total_paginas
+            tipo = "simple"
+
+        precio_fotocopia = obtener_precio(paginas_para_precio, tipo, usuario, porcentaje_color_promedio, color)
+        total_costo_archivos = paginas_para_precio * precio_fotocopia
+
+        for ruta_pdf in ruta_pdfs:
+            detalles_archivos[ruta_pdf] = (num_paginas, total_costo_archivos)
 
         # Cerrar la ventana de progreso
         progress_window.destroy()
@@ -168,6 +169,7 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo abrir el archivo PDF: {e}")
         return None, None
+
 
 
 def convertir_a_pdf():
