@@ -49,7 +49,8 @@ def cargar_precios():
         precios_estudiante = {
             "simple": {
                 1:80,
-                6:60,
+                6:70,
+                20:60,
                 50: 50,
                 100: 40
             },
