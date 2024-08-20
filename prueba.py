@@ -3,14 +3,15 @@ import cv2
 import numpy as np
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
-from tkinter import filedialog, messagebox, Toplevel, StringVar, IntVar, Label
-from PIL import Image, ImageTk
+from tkinter import filedialog, messagebox, Toplevel, StringVar, IntVar
+from PIL import Image
 import pandas as pd
 import os
 from tqdm import tqdm
 from docx2pdf import convert as convert_docx
 import tempfile
 import shutil
+
 
 # Variables globales para los precios de fotocopia según la tabla
 PRECIOS_PATH = "precios.xlsx"
@@ -47,20 +48,39 @@ def cargar_precios():
 
         precios_estudiante = {
             "simple": {
-                1:100,
-                10: 50,
-                20: 50,
-                80: 40,
+                1:80,
+                6:70,
+                20:60,
+                50: 50,
                 100: 40
             },
             "doble": {
                 1:100,
-                10: 80,
-                20: 80,
+                30: 80,
                 100: 70
             }
         }
         return precios_publico, precios_estudiante
+
+precios_anillado = {
+    "hasta_100": {
+        "publico": 800,
+        "estudiante": 800,
+        "color": 800,
+    },
+    "hasta_200": {
+        "publico": 900,
+        "estudiante": 900,
+        "color": 900,
+    },
+    "mas_de_200": {
+        "publico": 1100,
+        "estudiante": 1100,
+        "color": 1100,
+    }
+}
+
+
 
 def guardar_precios(precios_publico, precios_estudiante):
     df_publico = pd.DataFrame(precios_publico).T.reset_index().rename(columns={'index': 'cantidad'})
@@ -79,10 +99,10 @@ def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color):
     precios = precios_estudiante if usuario == "estudiante" else precios_publico
 
     # Ajuste de precio según porcentaje de color
-    precio_color = 100 + (porcentaje_color * 400)  # Precio base $100 y máximo $500
+    precio_color = 100 + (porcentaje_color * 500)  # Precio base $100 y máximo $600
     if color:
         precio_color = precio_color   
-        precio_color = min(precio_color, 500)  # Limitar a un máximo de $500
+        precio_color = min(precio_color, 600)  # Limitar a un máximo de $600
     else:
         precio_color = 0  # No hay ajuste por color si no es a color
 
@@ -90,6 +110,8 @@ def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color):
         if cantidad >= limite:
             return int(precio + precio_color)
     return 0
+
+
 
 def obtener_porcentaje_color(pagina):
     # Convertir la página a una imagen de PIL
@@ -103,7 +125,7 @@ def obtener_porcentaje_color(pagina):
     hsv = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
 
     # Definir umbral para detectar colores (excluyendo blanco y negro)
-    lower_color = np.array([0, sensitivity, sensitivity])  # Usar sensibilidad global
+    lower_color = np.array([sensitivity, sensitivity, sensitivity])  # Usar sensibilidad global
     upper_color = np.array([179, 255, 255])  # Umbral máximo para colores
 
     # Crear una máscara para los colores
@@ -119,6 +141,7 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
     try:
         total_paginas = 0
         total_costo_archivos = 0
+        color_paginas = 0
 
         # Crear la ventana de progreso
         progress_window = Toplevel(root)
@@ -137,24 +160,26 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
             num_paginas = len(doc)
             total_paginas += num_paginas
 
-            color_paginas = sum(obtener_porcentaje_color(pagina) for pagina in doc)
-            porcentaje_color_promedio = color_paginas / num_paginas
-
-            if doble_faz and not color:
-                paginas_para_precio = (num_paginas + 1) // 2  # Redondear para arriba
-                tipo = "doble"
-            else:
-                paginas_para_precio = num_paginas
-                tipo = "simple"
-
-            precio_fotocopia = obtener_precio(paginas_para_precio, tipo, usuario, porcentaje_color_promedio, color)
-            costo_archivo = paginas_para_precio * precio_fotocopia
-            total_costo_archivos += costo_archivo
-            detalles_archivos[ruta_pdf] = (num_paginas, costo_archivo, precio_fotocopia)
+            color_paginas += sum(obtener_porcentaje_color(pagina) for pagina in doc)
 
             # Actualizar la barra de progreso
             progress_bar['value'] = i + 1
             progress_window.update()
+
+        porcentaje_color_promedio = color_paginas / total_paginas
+
+        if doble_faz and not color:
+            paginas_para_precio = (total_paginas + 1) // 2  # Redondear para arriba
+            tipo = "doble"
+        else:
+            paginas_para_precio = total_paginas
+            tipo = "simple"
+
+        precio_fotocopia = obtener_precio(paginas_para_precio, tipo, usuario, porcentaje_color_promedio, color)
+        total_costo_archivos = paginas_para_precio * precio_fotocopia
+
+        for ruta_pdf in ruta_pdfs:
+            detalles_archivos[ruta_pdf] = (num_paginas, total_costo_archivos)
 
         # Cerrar la ventana de progreso
         progress_window.destroy()
@@ -163,6 +188,21 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo abrir el archivo PDF: {e}")
         return None, None
+
+def obtener_precio_anillado(total_hojas, usuario, color):
+    if total_hojas <= 100:
+        key = "hasta_100"
+    elif total_hojas <= 200:
+        key = "hasta_200"
+    else:
+        key = "mas_de_200"
+
+    precios = precios_anillado[key]
+    precio_base = precios[usuario]
+    precio_color = precios["color"] if color else 0
+
+    return precio_base + precio_color
+    
 
 def convertir_a_pdf():
     archivo = filedialog.askopenfilename(filetypes=[("Todos los archivos", "*.*")])
@@ -192,10 +232,12 @@ def convertir_a_pdf():
                     messagebox.showwarning("Advertencia", "Tipo de archivo no soportado para conversión.")
                     shutil.rmtree(temp_dir)
                     return
-                messagebox.showinfo("Éxito", f"El archivo {os.path.basename(archivo)} se ha convertido a PDF.")
+                messagebox.showinfo("Éxito", f"El archivzo {os.path.basename(archivo)} se ha convertido a PDF.")
                 shutil.rmtree(temp_dir)
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudo convertir el archivo a PDF: {e}")
+  
+
 
 def menu_interactivo():
     def salir():
@@ -205,6 +247,41 @@ def menu_interactivo():
         rutas_pdfs = filedialog.askopenfilenames(filetypes=[("Archivos PDF", "*.pdf")])
         if rutas_pdfs:
             rutas_var.set(", ".join(rutas_pdfs))
+
+    
+    #CAMBIOS ACA: Importar módulos adicionales si es necesario
+# Ningún nuevo módulo es necesario para este cambio.
+
+    def mostrar_ventana_manual():
+        def calcular_manual():
+            try:
+                cantidad = int(entry_cantidad.get())
+                tipo = "doble" if chk_doble_faz_manual.get() == 1 else "simple"
+                usuario = "publico"  # Aquí sólo trabajamos con el público general
+                color = False  # Sólo blanco y negro
+                
+                precio_por_copia = obtener_precio(cantidad, tipo, usuario, 0, color)  # Porcentaje de color es 0
+                total_costo = precio_por_copia * cantidad
+                
+                messagebox.showinfo("Resultado", f"El costo total es: ${total_costo}")
+            except ValueError:
+                messagebox.showerror("Error", "Por favor, ingresa una cantidad válida.")
+
+        ventana_manual = Toplevel(root)
+        ventana_manual.title("Calcular Copias Manualmente")
+        ventana_manual.geometry("300x200")
+
+        ttk.Label(ventana_manual, text="Cantidad de copias:").pack(pady=10)
+        entry_cantidad = ttk.Entry(ventana_manual)
+        entry_cantidad.pack(pady=10)
+
+        chk_doble_faz_manual = IntVar()
+        chk_doble_faz = ttk.Checkbutton(ventana_manual, text="Doble Faz", variable=chk_doble_faz_manual)
+        chk_doble_faz.pack(pady=10)
+
+        btn_calcular_manual = ttk.Button(ventana_manual, text="Calcular", command=calcular_manual, bootstyle="primary")
+        btn_calcular_manual.pack(pady=10)
+
 
     def mostrar_ventana_detalles(total_copias, detalles_archivos, opciones_seleccionadas):
         detalles_window = Toplevel(root)
@@ -223,68 +300,211 @@ def menu_interactivo():
         )
 
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        ttk.Label(scrollable_frame, text=f"Total de fotocopias: {total_copias}", font=("Helvetica", 12, "bold")).pack(pady=5)
-        ttk.Label(scrollable_frame, text=f"Opción de usuario: {opciones_seleccionadas['usuario']}", font=("Helvetica", 12, "bold")).pack(pady=5)
-        ttk.Label(scrollable_frame, text=f"Opción de color: {opciones_seleccionadas['color']}", font=("Helvetica", 12, "bold")).pack(pady=5)
-        ttk.Label(scrollable_frame, text=f"Opción de doble faz: {opciones_seleccionadas['doble_faz']}", font=("Helvetica", 12, "bold")).pack(pady=5)
+        ttk.Label(scrollable_frame, text="Opciones seleccionadas:", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, padx=5, pady=5)
+        ttk.Label(scrollable_frame, text=opciones_seleccionadas).grid(row=1, column=0, columnspan=2, padx=5, pady=5)
 
-        for archivo, (paginas, costo, precio_fotocopia) in detalles_archivos.items():
-            ttk.Label(scrollable_frame, text=f"{archivo} - Páginas: {paginas} - Precio por fotocopia: ${precio_fotocopia} - Costo Total: ${costo}", font=("Helvetica", 10)).pack(pady=2)
+        ttk.Label(scrollable_frame, text=f"Costo total de las fotocopias: ${total_copias}", font=("Arial", 12, "bold")).grid(row=2, column=0, columnspan=2, padx=5, pady=5)
+
+        row = 3
+        for ruta, (hojas, precio) in detalles_archivos.items():
+            precio_por_copia = precio // hojas if hojas > 0 else 0
+            ttk.Label(scrollable_frame, text=f"Archivo: {os.path.basename(ruta)}", font=("Arial", 12, "bold")).grid(row=row, column=0, padx=5, pady=5, sticky="w")
+            row += 1
+            ttk.Label(scrollable_frame, text=f"Hojas: {hojas}").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+            ttk.Label(scrollable_frame, text=f"Precio: ${precio} (${precio_por_copia} por copia)").grid(row=row, column=1, padx=5, pady=5, sticky="w")
+            row += 1
 
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-    def calcular_y_mostrar_precios():
+    
+    def calcular():
         rutas_pdfs = rutas_var.get().split(", ")
-        usuario = usuario_var.get()
-        color = color_var.get()
-        doble_faz = doble_faz_var.get()
         if rutas_pdfs:
-            total_costo, detalles_archivos = calcular_precios(root, rutas_pdfs, doble_faz, usuario, color)
-            if total_costo is not None:
-                opciones_seleccionadas = {
-                    'usuario': usuario,
-                    'color': 'Sí' if color else 'No',
-                    'doble_faz': 'Sí' if doble_faz else 'No'
-                }
-                mostrar_ventana_detalles(total_costo, detalles_archivos, opciones_seleccionadas)
+            doble_faz = opcion_doble_faz.get() == 1
+            usuario = "estudiante" if opcion_usuario.get() == 1 else "publico"
+            color = opcion_color.get() == 1
+            total_copias, detalles_archivos = calcular_precios(root, rutas_pdfs, doble_faz, usuario, color)
+            if total_copias is not None:
+                opciones_seleccionadas = (
+                    f"Tipo de usuario: {'Estudiante' if usuario == 'estudiante' else 'Público'}\n"
+                    f"Tipo de fotocopia: {'Doble faz' if doble_faz else 'Simple'}\n"
+                    f"Color: {'Sí' if color else 'No'}\n"
+                )
 
-    root = ttk.Window(themename="superhero")
-    root.title("Calculadora de Precios de Fotocopias")
-    root.geometry("500x400")
+                # Verificar si se seleccionó la opción de anillado
+                if opcion_anillado.get() == 1:
+                    total_hojas = sum(hojas for hojas, _ in detalles_archivos.values())
+                    precio_anillado = obtener_precio_anillado(total_hojas, usuario, color)
+                    total_copias += precio_anillado
+                    opciones_seleccionadas += f"Anillado: Sí, ${precio_anillado}\n"
+                else:
+                    opciones_seleccionadas += "Anillado: No\n"
 
+                mostrar_ventana_detalles(total_copias, detalles_archivos, opciones_seleccionadas)
+        else:
+            messagebox.showwarning("Advertencia", "Por favor, selecciona al menos un archivo PDF.")
+
+    def mostrar_ventana_ajustes():
+        def guardar_ajustes():
+            global sensitivity  # Declarar sensibilidad como global
+            try:
+                nueva_sensibilidad = int(entry_sensitivity.get())
+                if 0 <= nueva_sensibilidad <= 255:
+                    sensitivity = nueva_sensibilidad
+                    ajustes_window.destroy()
+                else:
+                    messagebox.showerror("Error", "El umbral de sensibilidad debe estar entre 0 y 255.")
+            except ValueError:
+                messagebox.showerror("Error", "El umbral de sensibilidad debe ser un número entero.")
+
+        ajustes_window = Toplevel(root)
+        ajustes_window.title("Ajustes Avanzados")
+        ajustes_window.geometry("300x200")
+
+        label_sensitivity = ttk.Label(ajustes_window, text="Umbral de Sensibilidad para Detección de Color:", font=("Arial", 12))
+        label_sensitivity.pack(pady=10)
+
+        entry_sensitivity = ttk.Entry(ajustes_window)
+        entry_sensitivity.pack(pady=10)
+        entry_sensitivity.insert(0, sensitivity)
+
+        btn_guardar = ttk.Button(ajustes_window, text="Guardar", command=guardar_ajustes, bootstyle="success")
+        btn_guardar.pack(pady=10)
+
+    def mostrar_ventana_editar_precios():
+        def guardar_precios_editar():
+            try:
+                for tipo in precios_publico:
+                    for key in precios_publico[tipo]:
+                        nuevo_precio = int(entry_publico[tipo][key].get())
+                        precios_publico[tipo][key] = nuevo_precio
+
+                for tipo in precios_estudiante:
+                    for key in precios_estudiante[tipo]:
+                        nuevo_precio = int(entry_estudiante[tipo][key].get())
+                        precios_estudiante[tipo][key] = nuevo_precio
+
+                guardar_precios(precios_publico, precios_estudiante)
+                editar_precios_window.destroy()
+            except ValueError:
+                messagebox.showerror("Error", "Todos los campos deben ser números enteros.")
+
+        editar_precios_window = Toplevel(root)
+        editar_precios_window.title("Editar Precios")
+        editar_precios_window.geometry("700x500")
+
+        frame_publico = ttk.Frame(editar_precios_window)
+        frame_publico.pack(side="left", padx=20, pady=20, fill="y", expand=True)
+
+        frame_estudiante = ttk.Frame(editar_precios_window)
+        frame_estudiante.pack(side="right", padx=20, pady=20, fill="y", expand=True)
+
+        ttk.Label(frame_publico, text="Público - Simple Faz", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
+        ttk.Label(frame_estudiante, text="Estudiante - Simple Faz", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
+
+        entry_publico = {"simple": {}, "doble": {}}
+        entry_estudiante = {"simple": {}, "doble": {}}
+
+        row = 1
+        for tipo in precios_publico:
+            for key in sorted(precios_publico[tipo].keys()):
+                if tipo == "doble":
+                    ttk.Label(frame_publico, text="Público - Doble Faz", font=("Arial", 12, "bold")).grid(row=row, column=0, columnspan=2, pady=10)
+                    row += 1
+                ttk.Label(frame_publico, text=f"{key} hojas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
+                entry = ttk.Entry(frame_publico, width=10)
+                entry.grid(row=row, column=1, padx=5, pady=5, sticky="w")
+                entry.insert(0, precios_publico[tipo][key])
+                entry_publico[tipo][key] = entry
+                row += 1
+
+        row = 1
+        for tipo in precios_estudiante:
+            for key in sorted(precios_estudiante[tipo].keys()):
+                if tipo == "doble":
+                    ttk.Label(frame_estudiante, text="Estudiante - Doble Faz", font=("Arial", 12, "bold")).grid(row=row, column=0, columnspan=2, pady=10)
+                    row += 1
+                ttk.Label(frame_estudiante, text=f"{key} hojas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
+                entry = ttk.Entry(frame_estudiante, width=10)
+                entry.grid(row=row, column=1, padx=5, pady=5, sticky="w")
+                entry.insert(0, precios_estudiante[tipo][key])
+                entry_estudiante[tipo][key] = entry
+                row += 1
+
+        btn_guardar = ttk.Button(editar_precios_window, text="Guardar", command=guardar_precios_editar, bootstyle="success")
+        btn_guardar.pack(pady=20)
+
+
+    root = ttk.Window(themename="darkly")
+    root.title("Calculadora de Fotocopias")
+    root.geometry("800x600")
+
+
+    marco_superior = ttk.Frame(root)
+    marco_superior.pack(pady=20)
+
+    etiqueta_titulo = ttk.Label(marco_superior, text="Calculadora de Fotocopias", font=("Arial", 24, "bold"))
+    etiqueta_titulo.pack()
+
+    marco_opciones = ttk.Frame(root)
+    marco_opciones.pack(pady=10)
+
+    ttk.Label(marco_opciones, text="Archivos seleccionados:").grid(row=0, column=0, sticky="w")
     rutas_var = StringVar()
-    usuario_var = StringVar(value="publico")
-    color_var = IntVar(value=0)
-    doble_faz_var = IntVar(value=0)
-    sensitivity_var = IntVar(value=sensitivity)
+    entry_rutas = ttk.Entry(marco_opciones, textvariable=rutas_var, width=60, state='readonly')
+    entry_rutas.grid(row=1, column=0, padx=5, pady=5, sticky="we")
 
-    ttk.Label(root, text="Seleccionar archivos PDF:", font=("Helvetica", 12)).pack(pady=10)
-    ttk.Button(root, text="Seleccionar archivos", command=seleccionar_archivos).pack()
-    ttk.Label(root, textvariable=rutas_var, wraplength=400).pack(pady=10)
+    btn_seleccionar = ttk.Button(marco_opciones, text="Seleccionar Archivos", command=seleccionar_archivos)
+    btn_seleccionar.grid(row=1, column=1, padx=5, pady=5)
 
-    ttk.Label(root, text="Seleccionar opciones:", font=("Helvetica", 12)).pack(pady=10)
-    opciones_frame = ttk.Frame(root)
-    opciones_frame.pack(pady=5)
+    marco_opciones_extra = ttk.Frame(root)
+    marco_opciones_extra.pack(pady=10)
 
-    ttk.Radiobutton(opciones_frame, text="Público", variable=usuario_var, value="publico").grid(row=0, column=0, padx=5, pady=5)
-    ttk.Radiobutton(opciones_frame, text="Estudiante", variable=usuario_var, value="estudiante").grid(row=0, column=1, padx=5, pady=5)
-    ttk.Checkbutton(opciones_frame, text="Doble faz", variable=doble_faz_var).grid(row=1, column=0, padx=5, pady=5)
-    ttk.Checkbutton(opciones_frame, text="Color", variable=color_var).grid(row=1, column=1, padx=5, pady=5)
+    
+    opcion_anillado = IntVar()
 
-    ttk.Label(opciones_frame, text="Sensibilidad de color:", font=("Helvetica", 10)).grid(row=2, column=0, padx=5, pady=5)
-    sensitivity_scale = ttk.Scale(opciones_frame, from_=0, to_=255, variable=sensitivity_var)
-    sensitivity_scale.set(sensitivity)
-    sensitivity_scale.grid(row=2, column=1, padx=5, pady=5)
+    
+    chk_anillado = ttk.Checkbutton(root, text="Anillado", variable=opcion_anillado)
+    chk_anillado.pack(pady=5)
 
-    ttk.Button(root, text="Calcular precios", command=calcular_y_mostrar_precios).pack(pady=10)
-    ttk.Button(root, text="Salir", command=salir).pack(pady=10)
-    ttk.Button(root, text="Convertir a PDF", command=convertir_a_pdf).pack(pady=10)
+
+    opcion_doble_faz = IntVar()
+    chk_doble_faz = ttk.Checkbutton(marco_opciones_extra, text="Doble Faz", variable=opcion_doble_faz)
+    chk_doble_faz.grid(row=0, column=0, padx=10, pady=5)
+
+    opcion_usuario = IntVar()
+    rad_publico = ttk.Radiobutton(marco_opciones_extra, text="Público", variable=opcion_usuario, value=0)
+    rad_publico.grid(row=0, column=1, padx=10, pady=5)
+    rad_estudiante = ttk.Radiobutton(marco_opciones_extra, text="Estudiante", variable=opcion_usuario, value=1)
+    rad_estudiante.grid(row=0, column=2, padx=10, pady=5)
+
+    opcion_color = IntVar()
+    chk_color = ttk.Checkbutton(marco_opciones_extra, text="Color", variable=opcion_color)
+    chk_color.grid(row=0, column=3, padx=10, pady=5)
+
+
+    btn_calcular = ttk.Button(root, text="Calcular", command=calcular, bootstyle="primary")
+    btn_calcular.pack(pady=10)
+
+    
+    btn_manual = ttk.Button(root, text="Calcular Manualmente", command=mostrar_ventana_manual, bootstyle="secondary")
+    btn_manual.pack(pady=5)
+
+    btn_convertir_pdf = ttk.Button(root, text="Convertir a PDF", command=convertir_a_pdf, bootstyle="secondary")
+    btn_convertir_pdf.pack(pady=5)
+
+    btn_ajustes = ttk.Button(root, text="Ajustes Avanzados", command=mostrar_ventana_ajustes, bootstyle="secondary")
+    btn_ajustes.pack(pady=5)
+
+    btn_editar_precios = ttk.Button(root, text="Editar Precios", command=mostrar_ventana_editar_precios, bootstyle="secondary")
+    btn_editar_precios.pack(pady=5)
+
+    btn_salir = ttk.Button(root, text="Salir", command=salir, bootstyle="danger")
+    btn_salir.pack(pady=10)
 
     root.mainloop()
 
-if __name__ == "__main__":
-    menu_interactivo()
+menu_interactivo()

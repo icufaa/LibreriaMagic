@@ -62,6 +62,24 @@ def cargar_precios():
         }
         return precios_publico, precios_estudiante
 
+precios_anillado = {
+    "hasta_100": {
+        "publico": 800,
+        "estudiante": 800,
+        "color": 800,
+    },
+    "hasta_200": {
+        "publico": 900,
+        "estudiante": 900,
+        "color": 900,
+    },
+    "mas_de_200": {
+        "publico": 1100,
+        "estudiante": 1100,
+        "color": 1100,
+    }
+}
+
 
 
 def guardar_precios(precios_publico, precios_estudiante):
@@ -81,10 +99,10 @@ def obtener_precio(cantidad, tipo, usuario, porcentaje_color, color):
     precios = precios_estudiante if usuario == "estudiante" else precios_publico
 
     # Ajuste de precio según porcentaje de color
-    precio_color = 100 + (porcentaje_color * 400)  # Precio base $100 y máximo $500
+    precio_color = 100 + (porcentaje_color * 500)  # Precio base $100 y máximo $600
     if color:
         precio_color = precio_color   
-        precio_color = min(precio_color, 500)  # Limitar a un máximo de $500
+        precio_color = min(precio_color, 600)  # Limitar a un máximo de $600
     else:
         precio_color = 0  # No hay ajuste por color si no es a color
 
@@ -171,7 +189,20 @@ def calcular_precios(root, ruta_pdfs, doble_faz=False, usuario="publico", color=
         messagebox.showerror("Error", f"No se pudo abrir el archivo PDF: {e}")
         return None, None
 
+def obtener_precio_anillado(total_hojas, usuario, color):
+    if total_hojas <= 100:
+        key = "hasta_100"
+    elif total_hojas <= 200:
+        key = "hasta_200"
+    else:
+        key = "mas_de_200"
 
+    precios = precios_anillado[key]
+    precio_base = precios[usuario]
+    precio_color = precios["color"] if color else 0
+
+    return precio_base + precio_color
+    
 
 def convertir_a_pdf():
     archivo = filedialog.askopenfilename(filetypes=[("Todos los archivos", "*.*")])
@@ -218,6 +249,40 @@ def menu_interactivo():
             rutas_var.set(", ".join(rutas_pdfs))
 
     
+    #CAMBIOS ACA: Importar módulos adicionales si es necesario
+# Ningún nuevo módulo es necesario para este cambio.
+
+    def mostrar_ventana_manual():
+        def calcular_manual():
+            try:
+                cantidad = int(entry_cantidad.get())
+                tipo = "doble" if chk_doble_faz_manual.get() == 1 else "simple"
+                usuario = "publico"  # Aquí sólo trabajamos con el público general
+                color = False  # Sólo blanco y negro
+                
+                precio_por_copia = obtener_precio(cantidad, tipo, usuario, 0, color)  # Porcentaje de color es 0
+                total_costo = precio_por_copia * cantidad
+                
+                messagebox.showinfo("Resultado", f"El costo total es: ${total_costo}")
+            except ValueError:
+                messagebox.showerror("Error", "Por favor, ingresa una cantidad válida.")
+
+        ventana_manual = Toplevel(root)
+        ventana_manual.title("Calcular Copias Manualmente")
+        ventana_manual.geometry("300x200")
+
+        ttk.Label(ventana_manual, text="Cantidad de copias:").pack(pady=10)
+        entry_cantidad = ttk.Entry(ventana_manual)
+        entry_cantidad.pack(pady=10)
+
+        chk_doble_faz_manual = IntVar()
+        chk_doble_faz = ttk.Checkbutton(ventana_manual, text="Doble Faz", variable=chk_doble_faz_manual)
+        chk_doble_faz.pack(pady=10)
+
+        btn_calcular_manual = ttk.Button(ventana_manual, text="Calcular", command=calcular_manual, bootstyle="primary")
+        btn_calcular_manual.pack(pady=10)
+
+
     def mostrar_ventana_detalles(total_copias, detalles_archivos, opciones_seleccionadas):
         detalles_window = Toplevel(root)
         detalles_window.title("Detalles de Archivos")
@@ -244,10 +309,11 @@ def menu_interactivo():
 
         row = 3
         for ruta, (hojas, precio) in detalles_archivos.items():
+            precio_por_copia = precio // hojas if hojas > 0 else 0
             ttk.Label(scrollable_frame, text=f"Archivo: {os.path.basename(ruta)}", font=("Arial", 12, "bold")).grid(row=row, column=0, padx=5, pady=5, sticky="w")
             row += 1
             ttk.Label(scrollable_frame, text=f"Hojas: {hojas}").grid(row=row, column=0, padx=5, pady=5, sticky="w")
-            ttk.Label(scrollable_frame, text=f"Precio: ${precio}").grid(row=row, column=1, padx=5, pady=5, sticky="w")
+            ttk.Label(scrollable_frame, text=f"Precio: ${precio} (${precio_por_copia} por copia)").grid(row=row, column=1, padx=5, pady=5, sticky="w")
             row += 1
 
         canvas.pack(side="left", fill="both", expand=True)
@@ -267,6 +333,16 @@ def menu_interactivo():
                     f"Tipo de fotocopia: {'Doble faz' if doble_faz else 'Simple'}\n"
                     f"Color: {'Sí' if color else 'No'}\n"
                 )
+
+                # Verificar si se seleccionó la opción de anillado
+                if opcion_anillado.get() == 1:
+                    total_hojas = sum(hojas for hojas, _ in detalles_archivos.values())
+                    precio_anillado = obtener_precio_anillado(total_hojas, usuario, color)
+                    total_copias += precio_anillado
+                    opciones_seleccionadas += f"Anillado: Sí, ${precio_anillado}\n"
+                else:
+                    opciones_seleccionadas += "Anillado: No\n"
+
                 mostrar_ventana_detalles(total_copias, detalles_archivos, opciones_seleccionadas)
         else:
             messagebox.showwarning("Advertencia", "Por favor, selecciona al menos un archivo PDF.")
@@ -387,6 +463,14 @@ def menu_interactivo():
     marco_opciones_extra = ttk.Frame(root)
     marco_opciones_extra.pack(pady=10)
 
+    
+    opcion_anillado = IntVar()
+
+    
+    chk_anillado = ttk.Checkbutton(root, text="Anillado", variable=opcion_anillado)
+    chk_anillado.pack(pady=5)
+
+
     opcion_doble_faz = IntVar()
     chk_doble_faz = ttk.Checkbutton(marco_opciones_extra, text="Doble Faz", variable=opcion_doble_faz)
     chk_doble_faz.grid(row=0, column=0, padx=10, pady=5)
@@ -404,6 +488,10 @@ def menu_interactivo():
 
     btn_calcular = ttk.Button(root, text="Calcular", command=calcular, bootstyle="primary")
     btn_calcular.pack(pady=10)
+
+    
+    btn_manual = ttk.Button(root, text="Calcular Manualmente", command=mostrar_ventana_manual, bootstyle="secondary")
+    btn_manual.pack(pady=5)
 
     btn_convertir_pdf = ttk.Button(root, text="Convertir a PDF", command=convertir_a_pdf, bootstyle="secondary")
     btn_convertir_pdf.pack(pady=5)
