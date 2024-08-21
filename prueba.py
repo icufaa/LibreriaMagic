@@ -91,7 +91,10 @@ def guardar_precios(precios_publico, precios_estudiante):
             df_estudiante.to_excel(writer, sheet_name='estudiante', index=False)
         messagebox.showinfo("Éxito", "Precios actualizados con éxito")
     except Exception as e:
-        messagebox.showerror("Error", f"No se pudieron guardar los precios: {e}")
+        messagebox.showerror("Error", f"No se pudieron guardar los precios: {e}\nRuta: {PRECIOS_PATH}\nVerifica los permisos y asegúrate de que el archivo no esté en uso.")
+        print(f"Error: {e}")
+        print(f"Ruta del archivo: {os.path.abspath(PRECIOS_PATH)}")
+
 
 precios_publico, precios_estudiante = cargar_precios()
 
@@ -377,24 +380,63 @@ def menu_interactivo():
     def mostrar_ventana_editar_precios():
         def guardar_precios_editar():
             try:
-                for tipo in precios_publico:
-                    for key in precios_publico[tipo]:
-                        nuevo_precio = int(entry_publico[tipo][key].get())
-                        precios_publico[tipo][key] = nuevo_precio
+                # Diccionarios para almacenar los precios actualizados
+                precios_actualizados_publico = {"simple": {}, "doble": {}}
+                precios_actualizados_estudiante = {"simple": {}, "doble": {}}
 
-                for tipo in precios_estudiante:
-                    for key in precios_estudiante[tipo]:
-                        nuevo_precio = int(entry_estudiante[tipo][key].get())
-                        precios_estudiante[tipo][key] = nuevo_precio
+                # Capturar los valores de los precios actualizados para el público (simple y doble)
+                for tipo in entry_publico:  # "simple" o "doble"
+                    for entry_cantidad, entry_precio in entry_publico[tipo]:
+                        cantidad = entry_cantidad.get().strip()
+                        precio = entry_precio.get().strip()
 
-                guardar_precios(precios_publico, precios_estudiante)
+                        if cantidad and precio:
+                            cantidad = int(cantidad)
+                            precio = int(precio)
+                            precios_actualizados_publico[tipo][cantidad] = precio
+
+                # Capturar los valores de los precios actualizados para estudiantes (simple y doble)
+                for tipo in entry_estudiante:  # "simple" o "doble"
+                    for entry_cantidad, entry_precio in entry_estudiante[tipo]:
+                        cantidad = entry_cantidad.get().strip()
+                        precio = entry_precio.get().strip()
+
+                        if cantidad and precio:
+                            cantidad = int(cantidad)
+                            precio = int(precio)
+                            precios_actualizados_estudiante[tipo][cantidad] = precio
+
+                # Guardar los precios actualizados en el archivo Excel
+                guardar_precios(precios_actualizados_publico, precios_actualizados_estudiante)
+                
+                # Cerrar la ventana de edición después de guardar
                 editar_precios_window.destroy()
+
+                # Mostrar mensaje de éxito
+                messagebox.showinfo("Éxito", "Precios guardados con éxito")
+                # Mostrar mensaje de reiniciar el programa para que los cambios sean guardados con éxito
+                messagebox.showinfo("Advertencia", "Reinicie el programa para que los precios sean actualizados")
+                
             except ValueError:
                 messagebox.showerror("Error", "Todos los campos deben ser números enteros.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Ocurrió un error al guardar los precios: {e}")
+
+
+        def agregar_nuevo_rango(tipo, es_publico=True):
+            frame = frame_publico if es_publico else frame_estudiante
+            entry_group = entry_publico if es_publico else entry_estudiante
+
+            row = len(entry_group[tipo]) + 1
+            entry_cantidad = ttk.Entry(frame, width=10)
+            entry_cantidad.grid(row=row, column=0, padx=5, pady=5, sticky="w")
+            entry_precio = ttk.Entry(frame, width=10)
+            entry_precio.grid(row=row, column=1, padx=5, pady=5, sticky="w")
+            entry_group[tipo].append((entry_cantidad, entry_precio))
 
         editar_precios_window = Toplevel(root)
         editar_precios_window.title("Editar Precios")
-        editar_precios_window.geometry("700x500")
+        editar_precios_window.geometry("800x600")
 
         frame_publico = ttk.Frame(editar_precios_window)
         frame_publico.pack(side="left", padx=20, pady=20, fill="y", expand=True)
@@ -402,40 +444,44 @@ def menu_interactivo():
         frame_estudiante = ttk.Frame(editar_precios_window)
         frame_estudiante.pack(side="right", padx=20, pady=20, fill="y", expand=True)
 
-        ttk.Label(frame_publico, text="Público - Simple Faz", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
-        ttk.Label(frame_estudiante, text="Estudiante - Simple Faz", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
+        ttk.Label(frame_publico, text="Público", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
+        ttk.Label(frame_estudiante, text="Estudiante", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
 
-        entry_publico = {"simple": {}, "doble": {}}
-        entry_estudiante = {"simple": {}, "doble": {}}
+        entry_publico = {"simple": [], "doble": []}
+        entry_estudiante = {"simple": [], "doble": []}
 
-        row = 1
+        row_publico = 1
+        row_estudiante = 1
         for tipo in precios_publico:
+            ttk.Label(frame_publico, text=f"{tipo.capitalize()} Faz", font=("Arial", 10, "bold")).grid(row=row_publico, column=0, columnspan=2, pady=5)
+            row_publico += 1
             for key in sorted(precios_publico[tipo].keys()):
-                if tipo == "doble":
-                    ttk.Label(frame_publico, text="Público - Doble Faz", font=("Arial", 12, "bold")).grid(row=row, column=0, columnspan=2, pady=10)
-                    row += 1
-                ttk.Label(frame_publico, text=f"{key} hojas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
-                entry = ttk.Entry(frame_publico, width=10)
-                entry.grid(row=row, column=1, padx=5, pady=5, sticky="w")
-                entry.insert(0, precios_publico[tipo][key])
-                entry_publico[tipo][key] = entry
-                row += 1
+                entry_cantidad = ttk.Entry(frame_publico, width=10)
+                entry_cantidad.grid(row=row_publico, column=0, padx=5, pady=5, sticky="w")
+                entry_cantidad.insert(0, key)
+                entry_precio = ttk.Entry(frame_publico, width=10)
+                entry_precio.grid(row=row_publico, column=1, padx=5, pady=5, sticky="w")
+                entry_precio.insert(0, precios_publico[tipo][key])
+                entry_publico[tipo].append((entry_cantidad, entry_precio))
+                row_publico += 1
 
-        row = 1
-        for tipo in precios_estudiante:
+            ttk.Label(frame_estudiante, text=f"{tipo.capitalize()} Faz", font=("Arial", 10, "bold")).grid(row=row_estudiante, column=0, columnspan=2, pady=5)
+            row_estudiante += 1
             for key in sorted(precios_estudiante[tipo].keys()):
-                if tipo == "doble":
-                    ttk.Label(frame_estudiante, text="Estudiante - Doble Faz", font=("Arial", 12, "bold")).grid(row=row, column=0, columnspan=2, pady=10)
-                    row += 1
-                ttk.Label(frame_estudiante, text=f"{key} hojas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
-                entry = ttk.Entry(frame_estudiante, width=10)
-                entry.grid(row=row, column=1, padx=5, pady=5, sticky="w")
-                entry.insert(0, precios_estudiante[tipo][key])
-                entry_estudiante[tipo][key] = entry
-                row += 1
+                entry_cantidad = ttk.Entry(frame_estudiante, width=10)
+                entry_cantidad.grid(row=row_estudiante, column=0, padx=5, pady=5, sticky="w")
+                entry_cantidad.insert(0, key)
+                entry_precio = ttk.Entry(frame_estudiante, width=10)
+                entry_precio.grid(row=row_estudiante, column=1, padx=5, pady=5, sticky="w")
+                entry_precio.insert(0, precios_estudiante[tipo][key])
+                entry_estudiante[tipo].append((entry_cantidad, entry_precio))
+                row_estudiante += 1
 
-        btn_guardar = ttk.Button(editar_precios_window, text="Guardar", command=guardar_precios_editar, bootstyle="success")
-        btn_guardar.pack(pady=20)
+        # Botones para agregar nuevos rangos
+        ttk.Button(frame_publico, text="Agregar rango", command=lambda: agregar_nuevo_rango("simple", es_publico=True)).grid(row=row_publico, column=0, columnspan=2, pady=10)
+        ttk.Button(frame_estudiante, text="Agregar rango", command=lambda: agregar_nuevo_rango("simple", es_publico=False)).grid(row=row_estudiante, column=0, columnspan=2, pady=10)
+
+        ttk.Button(editar_precios_window, text="Guardar", command=guardar_precios_editar, bootstyle="success").pack(pady=20)
 
 
     root = ttk.Window(themename="darkly")
