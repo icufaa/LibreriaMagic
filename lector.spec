@@ -8,7 +8,7 @@ a = Analysis(
     ['lector.py'],
     pathex=[],
     binaries=[],
-    datas=[('precios.xlsx', '.'), ('calculadora.ico', '.')],
+    datas=[('precios.xlsx', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -33,7 +33,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,  # Cambiar a True si deseas que la consola sea visible
-    icon='calculadora.ico',  # Icono de la aplicación
+    icon='calculator_icon-icons.com_72046.ico',  # Icono de la aplicación
 )
 
 coll = COLLECT(
